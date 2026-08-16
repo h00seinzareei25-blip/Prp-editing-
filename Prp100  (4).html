@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- PRPv150: حذف رکوردهای تکراری گزارش پیامک؛ لاگ اصلی مرجع است -->
+<!-- PRPv168: لیست تأیید همه نوبت‌های قطعی را نشان می‌دهد؛ بعد از تزریق نوبت بعد فعال یا ثبت می‌شود -->
 
 <!-- saved from url=(0067)file:///C:/Users/Hosein/Desktop/prp-project/PRPv65_final_v4(1).html -->
 <html lang="fa" dir="rtl"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0"> <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"> <meta http-equiv="Pragma" content="no-cache"> <meta http-equiv="Expires" content="0"> <title>سامانه مدیریت هوشمند PRP v137</title> <!-- Single-file offline CSS (embedded) -->
@@ -4916,39 +4916,87 @@ const STAGES = { 1: {label:'تزریق اول', nextGap:2}, 2: {label:'تزری�
             return { total: cap, active: activeQ, backlog: backlogQ, new: newQ };
         }
 
+        function prpSafeJalaliKey(v){
+            try{
+                if(v == null || v === '') return '';
+                var j = '';
+                try{ j = jalaliStringFromMaybe(v); }catch(e){ j = ''; }
+                var raw = (j && j !== '-') ? j : String(v);
+                var k = normalizeJalaliDateKey(raw);
+                if(!k || k === '-' || !/^\d{4}\/\d{2}\/\d{2}$/.test(k)) return '';
+                return k;
+            }catch(e){ return ''; }
+        }
+
         function prpCollectPatientBookingDateKeys(p){
             var keys = [];
             var seen = {};
             function addKey(v){
                 try{
-                    var k = normalizeJalaliDateKey(jalaliStringFromMaybe(v) || v || '');
+                    var k = prpSafeJalaliKey(v);
                     if(k && !seen[k]){ seen[k] = true; keys.push(k); }
                 }catch(e){}
             }
             try{
                 if(!p) return keys;
+                var curStage = Number(p.currentStage || 1) || 1;
                 // اولویت با تاریخِ شمسیِ ذخیره‌شده (bookingBucketDate): این مقدار مستقل از
                 // منطقه‌ی زمانی/ساعتِ سیستم است. اگر به‌جای آن از nextAppointment (که ISO/UTC
                 // است) استفاده شود، روی سیستمی با تایم‌زون متفاوت روزِ نوبت یک‌روز جابه‌جا
                 // و شمارشِ نفراتِ هر روز اشتباه می‌شود.
                 if(p.bookingBucketDate && String(p.bookingBucketDate).trim() !== ''){
                     addKey(p.bookingBucketDate);
-                } else {
+                } else if(p.status === 'CONFIRMED'){
                     addKey(p.nextAppointment);
                 }
                 var plan = (p.stageAppointments && typeof p.stageAppointments === 'object') ? p.stageAppointments : {};
-                Object.keys(plan).forEach(function(st){ addKey(plan[st]); });
+                Object.keys(plan).forEach(function(st){
+                    // تاریخ تزریق‌های قبلی ظرفیت روز جاری را اشغال نمی‌کند؛
+                    // فقط نوبت مرحله فعلی و رزرو مرحله‌های بعد شمرده می‌شود.
+                    if(Number(st) >= curStage) addKey(plan[st]);
+                });
             }catch(e){}
             return keys;
         }
 
         function prpPatientHasBookedDate(p, dateJ){
             try{
-                var key = normalizeJalaliDateKey(dateJ || '');
+                var key = prpSafeJalaliKey(dateJ);
                 if(!key) return false;
                 return prpCollectPatientBookingDateKeys(p).indexOf(key) !== -1;
             }catch(e){ return false; }
         }
+
+        // آیا این بیمار برای این تاریخ یک نوبت قطعی دارد و باید در «لیست تأیید» بیاید؟
+        // موعد تماس (followupMode=CALL_DUE بدون رزرو) نوبت قطعی نیست.
+        function prpPatientBelongsOnConfirmedDate(p, dateJ){
+            try{
+                var key = prpSafeJalaliKey(dateJ);
+                if(!p || !key) return false;
+                var st = Number(p.currentStage || 1) || 1;
+                var status = String(p.status || '');
+                if(status === 'ARCHIVED' || status === 'CANCELLED') return false;
+                function same(v){ return prpSafeJalaliKey(v) === key; }
+                var hasReservation = !!(p.bookingBucketDate || p.bookingBucket);
+                if(status === 'CONFIRMED' || hasReservation){
+                    if(same(p.bookingBucketDate)) return true;
+                    if(status === 'CONFIRMED' && same(p.nextAppointment)) return true;
+                    if(same((p.stageAppointments || {})[String(st)])) return true;
+                }
+                var plan = (p.stageAppointments && typeof p.stageAppointments === 'object') ? p.stageAppointments : {};
+                var futureHit = false;
+                Object.keys(plan).forEach(function(k){
+                    if(Number(k) > st && same(plan[k])) futureHit = true;
+                });
+                return futureHit;
+            }catch(e){ return false; }
+        }
+        try{
+            window.prpSafeJalaliKey = prpSafeJalaliKey;
+            window.prpPatientBelongsOnConfirmedDate = prpPatientBelongsOnConfirmedDate;
+            window.prpCollectPatientBookingDateKeys = prpCollectPatientBookingDateKeys;
+            window.prpPatientHasBookedDate = prpPatientHasBookedDate;
+        }catch(e){}
 
         function prpPatientBookingTypeForDate(p, dateJ){
             try{
@@ -10321,39 +10369,80 @@ if(search){
                     list.sort(function(a,b){ return ((a.fullName||a.name||'').localeCompare((b.fullName||b.name||''),'fa') * (sortState.dir || 1)); });
                 }
             } else if(currentTab === 'confirmedList') {
-                // PRPv139: تاریخ انتخاب‌شده در «لیست تأیید» یک تاریخ ثابتِ مراجعه است.
-                // حتی پس از ثبت تزریق یا غیبت، ردیف همان روز از لیست حذف یا با موعد آینده جایگزین نمی‌شود.
-                var confirmedDateKey = currentFilterDate ? normalizeJalaliDateKey(currentFilterDate) : '';
+                // PRPv168: هر نوبت قطعی باید در لیست تأیید همان روز بیاید.
+                // موعد تماس به‌تنهایی نوبت قطعی نیست. پس از تزریق/غیبت ردیف همان روز حذف نمی‌شود.
+                var confirmedDateKey = currentFilterDate ? (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(currentFilterDate) : normalizeJalaliDateKey(currentFilterDate)) : '';
                 var recG = confirmedDateKey ? jalaliToGregorian(confirmedDateKey) : null;
                 var activeConfirmedIds = {};
                 function confirmedFastDateKey(p){
                     if(!p) return '';
+                    try{
+                        if(typeof prpSafeJalaliKey === 'function'){
+                            var bk = prpSafeJalaliKey(p.bookingBucketDate);
+                            if(bk) return bk;
+                            var st = String(Number(p.currentStage || 1) || 1);
+                            var sk = prpSafeJalaliKey((p.stageAppointments || {})[st]);
+                            if(sk) return sk;
+                            if(p.status === 'CONFIRMED') return prpSafeJalaliKey(p.nextAppointment);
+                            return '';
+                        }
+                    }catch(e){}
                     var k = '';
                     try{ k = normalizeJalaliDateKey(p.bookingBucketDate || ''); }catch(e){ k = ''; }
-                    if(k) return k;
-                    try{ k = normalizeJalaliDateKey(jalaliStringFromMaybe(p.nextAppointment) || p.nextAppointment || ''); }catch(e){ k = ''; }
-                    return k || '';
+                    if(k && k !== '-') return k;
+                    try{ k = normalizeJalaliDateKey(jalaliStringFromMaybe(p.nextAppointment) || ''); }catch(e){ k = ''; }
+                    return (k && k !== '-') ? k : '';
                 }
                 function historyFastDateKey(h){
-                    try{ return normalizeJalaliDateKey((h && (h.eventDateJ || h.visitDateJ || h.confirmedVisitDateJ || h.dateJ)) || ''); }catch(e){ return ''; }
+                    try{
+                        if(typeof prpSafeJalaliKey === 'function'){
+                            return prpSafeJalaliKey((h && (h.eventDateJ || h.visitDateJ || h.confirmedVisitDateJ || h.dateJ || h.date)) || '');
+                        }
+                        return normalizeJalaliDateKey((h && (h.eventDateJ || h.visitDateJ || h.confirmedVisitDateJ || h.dateJ)) || '');
+                    }catch(e){ return ''; }
+                }
+                function belongsOnConfirmedDate(p, dateKey){
+                    if(!p) return false;
+                    try{
+                        if(typeof prpPatientBelongsOnConfirmedDate === 'function'){
+                            return prpPatientBelongsOnConfirmedDate(p, dateKey);
+                        }
+                    }catch(e){}
+                    if(p.status !== 'CONFIRMED') return false;
+                    return confirmedFastDateKey(p) === dateKey;
                 }
 
                 list = patients.filter(function(p){
-                    if(p.status !== 'CONFIRMED') return false;
-                    if(!confirmedDateKey) return true;
-                    return confirmedFastDateKey(p) === confirmedDateKey;
+                    if(!confirmedDateKey) return p.status === 'CONFIRMED';
+                    return belongsOnConfirmedDate(p, confirmedDateKey);
                 }).map(function(p){
                     activeConfirmedIds[String(p.id)] = true;
                     var row = Object.assign({}, p);
-                    row.__confirmedVisitDateJ = confirmedDateKey || confirmedFastDateKey(p) || jalaliStringFromMaybe(p.nextAppointment);
+                    row.__confirmedVisitDateJ = confirmedDateKey || confirmedFastDateKey(p) || (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(p.nextAppointment) : jalaliStringFromMaybe(p.nextAppointment));
                     row.__confirmedOutcome = '';
                     row.__confirmedOutcomeType = '';
+                    row.__confirmedIsFutureStage = false;
+                    try{
+                        var curSt = Number(p.currentStage || 1) || 1;
+                        var plan = p.stageAppointments || {};
+                        var currentHit = ((typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(p.bookingBucketDate) : '') === confirmedDateKey)
+                            || ((typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(plan[String(curSt)]) : '') === confirmedDateKey)
+                            || (p.status === 'CONFIRMED' && (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(p.nextAppointment) : '') === confirmedDateKey);
+                        if(confirmedDateKey && !currentHit){
+                            Object.keys(plan).forEach(function(st){
+                                if(Number(st) > curSt && (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(plan[st]) : '') === confirmedDateKey){
+                                    row.__confirmedIsFutureStage = true;
+                                    row.__confirmedFutureStage = Number(st);
+                                }
+                            });
+                        }
+                    }catch(e){}
                     return row;
                 });
 
                 processedList = [];
                 if(confirmedDateKey && recG){
-                    var __coKey = String(dataVersion) + '|' + confirmedDateKey;
+                    var __coKey = String(dataVersion) + '|v168|' + confirmedDateKey;
                     if(_confirmedOutcomeCache.key === __coKey && Array.isArray(_confirmedOutcomeCache.list)){
                         processedList = _confirmedOutcomeCache.list;
                     } else {
@@ -10361,27 +10450,26 @@ if(search){
                             if(activeConfirmedIds[String(p.id)]) return;
                             var events = (p.history||[]).filter(function(h){
                                 if(historyFastDateKey(h) !== confirmedDateKey && !_historySameDay(p, h, recG)) return false;
-                                var ht = String(h.type||'');
-                                return ht.indexOf('تزریق') >= 0 || ht.indexOf('غیبت') >= 0;
+                                var ht = String((h && (h.type || h.outcome || h.note)) || '');
+                                return ht.indexOf('تزریق') >= 0 || ht.indexOf('غیبت') >= 0 || /INJECTION|TREATMENT_DONE|ABSENT/i.test(ht);
                             });
                             if(!events.length) return;
 
-                            // آخرین نتیجه ثبت‌شده برای همان مراجعه ملاک نمایش است.
                             events.sort(function(a,b){
                                 var at = new Date(a.recordedAt || a.createdAt || a.ts || a.date || 0).getTime() || 0;
                                 var bt = new Date(b.recordedAt || b.createdAt || b.ts || b.date || 0).getTime() || 0;
                                 return at - bt;
                             });
                             var ev = events[events.length-1];
-                            var evType = String(ev.type||'');
-                            var isInjection = evType.indexOf('تزریق') >= 0;
+                            var evType = String((ev.type || ev.outcome || '') || '');
+                            var isInjection = evType.indexOf('تزریق') >= 0 || /INJECTION|TREATMENT_DONE/i.test(evType);
                             var row = Object.assign({}, p);
-                            row.nextAppointment = recG.toISOString();
                             row.__confirmedVisitDateJ = confirmedDateKey;
                             row.__confirmedOutcome = isInjection ? 'تزریق انجام شد' : 'غیبت';
                             row.__confirmedOutcomeType = isInjection ? 'INJECTION' : 'ABSENT';
                             row.__confirmedOutcomeHistory = ev;
-                            if(isInjection && Number(ev.stage||0)) row.currentStage = Number(ev.stage);
+                            row.__confirmedKeepNextAppointment = true;
+                            if(isInjection && Number(ev.stage||0)) row.__confirmedDoneStage = Number(ev.stage);
                             processedList.push(row);
                         });
                         _confirmedOutcomeCache.key = __coKey;
@@ -10572,12 +10660,20 @@ if(currentTab === 'confirmedList' || currentTab === 'callList' || currentTab ===
 
             var dObj = dateFromMaybeJalali(p.nextAppointment);
             var dStr = jalaliStringFromMaybe(p.nextAppointment);
+            if(currentTab === 'confirmedList' && p.__confirmedVisitDateJ){
+                dStr = p.__confirmedVisitDateJ;
+                try{ dObj = jalaliToGregorian(p.__confirmedVisitDateJ); }catch(e){ dObj = dateFromMaybeJalali(p.__confirmedVisitDateJ); }
+            }
             var diff = dObj ? diffDaysUTC(dObj, new Date()) : null;
             // نمایش فقط عدد روز (چه مانده چه گذشته) — رنگ: گذشته‌ها قرمز، نزدیک‌ها نارنجی، بقیه مشکی
             var dClass = 'font-black text-sm ' + (diff===null ? 'text-gray-400' : (diff<0 ? 'text-red-600' : (diff<=2 ? 'text-orange-600' : 'text-gray-900')));
             var dayText = (diff!==null) ? toPersianDigits(Math.abs(diff)) : '';
             var dayBadge = '';
-            if(diff!==null){
+            if(currentTab === 'confirmedList' && p.__confirmedOutcomeType === 'INJECTION'){
+                dayBadge = `<span class="day-num-badge bg-emerald-50 text-emerald-700 border border-emerald-200">💉</span>`;
+            } else if(currentTab === 'confirmedList' && p.__confirmedOutcomeType === 'ABSENT'){
+                dayBadge = `<span class="day-num-badge bg-rose-50 text-red-600 border border-rose-200">❌</span>`;
+            } else if(diff!==null){
                 // امروز: ✓ سبز | گذشته: عدد قرمز | نزدیک (۱-۲ روز مانده): نارنجی | بقیه: مشکی
                 if(diff === 0){
                     dayBadge = `<span class="day-num-badge bg-emerald-50 text-emerald-700 border border-emerald-200">✓</span>`;
@@ -10690,8 +10786,22 @@ if(p.lastUnreachableSmsAt){ var _smsLbl = _smsLblMap[p.lastUnreachableSmsType]||
                     : 'text-emerald-700 bg-emerald-50 border-emerald-200';
                 var __processedIcon = __processedAbsent ? '❌' : '💉';
                 var __processedLabel = __processedAbsent ? 'غیبت' : 'تزریق انجام شد';
+                var __nextBookedJ = '';
+                try{
+                    if(!__processedAbsent && p.status === 'CONFIRMED'){
+                        __nextBookedJ = (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(p.bookingBucketDate || p.nextAppointment) : '') || '';
+                    }
+                }catch(e){ __nextBookedJ = ''; }
+                var __nextHtml = '';
+                if(!__processedAbsent && p.status !== 'ARCHIVED'){
+                    if(__nextBookedJ && __nextBookedJ !== __fixedVisitJ){
+                        __nextHtml = `<div class="mt-1 text-[10px] font-black text-emerald-800">نوبت بعد: ${toPersianDigits(__nextBookedJ)}</div>`;
+                    } else {
+                        __nextHtml = `<button class="confirmed-book-btn mt-1" onclick="openApptModalForPatient('${p.id}')">📅 ثبت نوبت بعد</button>`;
+                    }
+                }
                 btns = `<div class="flex flex-col items-center justify-center gap-1.5 w-full">
-                    <div class="px-3 py-2 rounded-xl border text-xs font-black ${__processedClass}">${__processedIcon} ${__processedLabel}<div class="mt-1 text-[10px] opacity-80">تاریخ مراجعه: ${toPersianDigits(__fixedVisitJ)}</div></div>
+                    <div class="px-3 py-2 rounded-xl border text-xs font-black ${__processedClass}">${__processedIcon} ${__processedLabel}<div class="mt-1 text-[10px] opacity-80">تاریخ مراجعه: ${toPersianDigits(__fixedVisitJ)}</div>${__nextHtml}</div>
                     <div class="flex items-center justify-center gap-1 flex-wrap w-full">
                         <button class="glass-icon-btn confirmed-aux-btn" onclick="showHistory('${p.id}')" title="مشاهده سوابق" aria-label="مشاهده سوابق">📜</button>
                         <button class="glass-icon-btn confirmed-aux-btn" onclick="editPatient('${p.id}')" title="ویرایش پرونده" aria-label="ویرایش پرونده">✏️</button>
@@ -10714,11 +10824,35 @@ if(p.lastUnreachableSmsAt){ var _smsLbl = _smsLblMap[p.lastUnreachableSmsType]||
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : 'bg-rose-50 text-rose-700 border-rose-200';
                         var __outcomeIcon = __isInj ? '💉' : '❌';
+                        var __nextBookedJ2 = '';
+                        try{
+                            if(__isInj && p.status === 'CONFIRMED'){
+                                __nextBookedJ2 = (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(p.bookingBucketDate || p.nextAppointment) : '') || '';
+                            }
+                        }catch(e){ __nextBookedJ2 = ''; }
+                        var __nextHtml2 = '';
+                        if(__isInj && p.status !== 'ARCHIVED'){
+                            if(__nextBookedJ2 && __nextBookedJ2 !== __visitJ){
+                                __nextHtml2 = `<div class="mt-1 text-[10px] font-black text-emerald-800">نوبت بعد: ${toPersianDigits(__nextBookedJ2)}</div>`;
+                            } else {
+                                __nextHtml2 = `<button class="confirmed-book-btn mt-1" onclick="openApptModalForPatient('${p.id}')">📅 ثبت نوبت بعد</button>`;
+                            }
+                        }
                         btns = `<div class="flex flex-col items-center justify-center gap-1.5 w-full">
-                            <div class="px-3 py-2 rounded-xl border text-xs font-black ${__outcomeCls}">${__outcomeIcon} ${p.__confirmedOutcome}<div class="mt-1 text-[10px] opacity-80">تاریخ مراجعه: ${toPersianDigits(__visitJ||'—')}</div></div>
+                            <div class="px-3 py-2 rounded-xl border text-xs font-black ${__outcomeCls}">${__outcomeIcon} ${p.__confirmedOutcome}<div class="mt-1 text-[10px] opacity-80">تاریخ مراجعه: ${toPersianDigits(__visitJ||'—')}</div>${__nextHtml2}</div>
                             <div class="flex items-center justify-center gap-1 flex-wrap w-full">
                                 <button class="glass-icon-btn confirmed-aux-btn" onclick="showHistory('${p.id}')" title="مشاهده سوابق" aria-label="مشاهده سوابق">📜</button>
                                 <button class="glass-icon-btn confirmed-aux-btn" onclick="editPatient('${p.id}')" title="ویرایش پرونده" aria-label="ویرایش پرونده">✏️</button>
+                            </div>
+                        </div>`;
+                    } else if(p.__confirmedIsFutureStage){
+                        var __futSt = p.__confirmedFutureStage || '';
+                        btns = `<div class="flex flex-col items-center justify-center gap-1.5 w-full">
+                            <div class="px-3 py-2 rounded-xl border text-xs font-black bg-blue-50 text-blue-800 border-blue-200">📅 رزرو مرحله ${toPersianDigits(String(__futSt||'بعد'))}<div class="mt-1 text-[10px] opacity-80">نوبت فعلی هنوز تزریق نشده</div></div>
+                            <div class="flex items-center justify-center gap-1 flex-wrap w-full">
+                                <button class="glass-icon-btn" onclick="openApptModalForPatient('${p.id}')" title="ویرایش نوبت" aria-label="ویرایش نوبت">📅</button>
+                                <button class="glass-icon-btn confirmed-aux-btn" onclick="showHistory('${p.id}')" title="سوابق" aria-label="سوابق">📜</button>
+                                <button class="glass-icon-btn confirmed-aux-btn" onclick="editPatient('${p.id}')" title="ویرایش" aria-label="ویرایش">✏️</button>
                             </div>
                         </div>`;
                     } else {
@@ -12228,15 +12362,25 @@ tr.innerHTML = `
         // ════════════════════════════════════════════════════
         function exportTwoColumnPrint() {
             // فقط لیست تایید شده با فیلتر تاریخ جاری
-            let list = patients.filter(p => p.status === 'CONFIRMED');
+            let list = currentFilterDate
+                ? patients.filter(function(p){
+                    try{ return typeof prpPatientBelongsOnConfirmedDate === 'function' && prpPatientBelongsOnConfirmedDate(p, currentFilterDate); }
+                    catch(e){ return p.status === 'CONFIRMED'; }
+                })
+                : patients.filter(function(p){ return p.status === 'CONFIRMED'; });
             let title = 'لیست تایید شده';
 
             if(currentFilterDate) {
                 const recG = jalaliToGregorian(currentFilterDate);
                 list = list.filter(p => {
+                    try{
+                        if(typeof prpPatientBelongsOnConfirmedDate === 'function'){
+                            return prpPatientBelongsOnConfirmedDate(p, currentFilterDate);
+                        }
+                    }catch(e){}
                     if(!p.nextAppointment) return false;
                     const pd = dateFromMaybeJalali(p.nextAppointment);
-                    return pd.getFullYear()===recG.getFullYear() && pd.getMonth()===recG.getMonth() && pd.getDate()===recG.getDate();
+                    return pd && recG && pd.getFullYear()===recG.getFullYear() && pd.getMonth()===recG.getMonth() && pd.getDate()===recG.getDate();
                 });
                 title = 'لیست تایید شده - ' + currentFilterDate;
             }
@@ -12338,13 +12482,23 @@ ${pagesHtml}
             let filename = 'list';
 
             if(currentTab==='confirmedList') {
-                list = patients.filter(function(p){ return p.status==='CONFIRMED'; });
+                list = currentFilterDate
+                    ? patients.filter(function(p){
+                        try{ return typeof prpPatientBelongsOnConfirmedDate === 'function' && prpPatientBelongsOnConfirmedDate(p, currentFilterDate); }
+                        catch(e){ return p.status === 'CONFIRMED'; }
+                    })
+                    : patients.filter(function(p){ return p.status==='CONFIRMED'; });
                 if(currentFilterDate) {
                     var recG = jalaliToGregorian(currentFilterDate);
                     list = list.filter(function(p){
+                        try{
+                            if(typeof prpPatientBelongsOnConfirmedDate === 'function'){
+                                return prpPatientBelongsOnConfirmedDate(p, currentFilterDate);
+                            }
+                        }catch(e){}
                         if(!p.nextAppointment) return false;
                         var pd = dateFromMaybeJalali(p.nextAppointment);
-                        return pd.getFullYear()===recG.getFullYear() &&
+                        return pd && recG && pd.getFullYear()===recG.getFullYear() &&
                                pd.getMonth()===recG.getMonth() &&
                                pd.getDate()===recG.getDate();
                     });
@@ -25939,7 +26093,7 @@ window.PRP_DAILY_QUOTA_MODEL = {version:'v92', total:'dynamic', activeRatio:25, 
     if(dayDiff(doneJ,todayKey())>0){showMsg('ثبت انجام نشد','تاریخ نوبت '+toPersianDigits(doneJ)+' هنوز نرسیده است. برای ثبت تزریق، ابتدا تاریخ صحیح مراجعه را اصلاح کنید.');return;}
     var duplicate=completedInjections(p).some(function(x){return x.stage===doneStage&&x.dateJ===doneJ;});
     if(duplicate){showMsg('قبلاً ثبت شده','تزریق مرحله '+toPersianDigits(doneStage)+' در تاریخ '+toPersianDigits(doneJ)+' قبلاً در سوابق ثبت شده است.');return;}
-    showConfirm('تکمیل نوبت','تزریق مرحله '+toPersianDigits(doneStage)+' در تاریخ '+toPersianDigits(doneJ)+' ثبت شود؟\n\nموعد مرحله بعد از همین تاریخ واقعی محاسبه می‌شود.',function(){
+    showConfirm('تکمیل نوبت','تزریق مرحله '+toPersianDigits(doneStage)+' در تاریخ '+toPersianDigits(doneJ)+' ثبت شود؟\n\nاگر نوبت مرحله بعد از قبل رزرو شده باشد، همان نوبت فعال می‌شود.',function(){
       var g=gFromJ(doneJ); if(!g){showMsg('خطا','تاریخ تزریق معتبر نیست.');return;}
       p.history=p.history||[];
       var hist={date:g.toISOString(),recordedAt:new Date().toISOString(),dateJ:doneJ,eventDateJ:doneJ,visitDateJ:doneJ,confirmedVisitDateJ:doneJ,outcome:'INJECTION',type:'تزریق '+doneStage,note:'انجام شد - تاریخ تزریق: '+doneJ,stage:doneStage};
@@ -25947,25 +26101,48 @@ window.PRP_DAILY_QUOTA_MODEL = {version:'v92', total:'dynamic', activeRatio:25, 
       p.history.push(hist);
       p.stageAppointments=(p.stageAppointments&&typeof p.stageAppointments==='object')?p.stageAppointments:{};
       p.stageAppointments[String(doneStage)]=doneJ;
-      Object.keys(p.stageAppointments).forEach(function(st){if(Number(st)>doneStage) delete p.stageAppointments[st];});
-      if(p.stageAppointmentBuckets&&typeof p.stageAppointmentBuckets==='object') Object.keys(p.stageAppointmentBuckets).forEach(function(st){if(Number(st)>doneStage) delete p.stageAppointmentBuckets[st];});
       p.regDate=g.toISOString(); p.lastInjectionDate=doneJ; p.lastInjectionStage=doneStage;
       p.lastAbsentDate=null; p.lastCallDate=null; p.lastCallOutcome=null; p.callLaterAt=null; p.isWaitlist=false;
+      var activatedNext=false, plannedNextJ='';
       if(doneStage>=4){
         p.currentStage=4; p.status='ARCHIVED'; p.nextAppointment=null; p.idealNextDate=''; p.followupDueDate=''; p.followupMode='';
         p.bookingBucket='';p.bookingType='';p.bookingBucketDate='';
         p.archiveReason=p.archiveReason||'تکمیل مراحل درمان';p.archiveAt=p.archiveAt||new Date().toISOString();
       }else{
         var nextStage=doneStage+1, due=dueAfterDone(doneJ,doneStage), dueIso=isoFromJ(due);
-        p.currentStage=nextStage; p.idealNextDate=due; p.followupDueDate=due; p.followupMode='CALL_DUE';
-        p.nextAppointment=dueIso; p.status='PENDING_CALL'; p.bookingBucket='';p.bookingType='';p.bookingBucketDate='';
-        p.history.push({date:new Date().toISOString(),type:'موعد تماس',dateJ:due,eventDateJ:due,stage:nextStage,note:'موعد تماس مرحله '+nextStage+' برای '+due+' ثبت شد؛ نوبت قطعی هنگام تماس انتخاب می‌شود.'});
+        plannedNextJ=key((p.stageAppointments||{})[String(nextStage)]||'');
+        p.currentStage=nextStage; p.idealNextDate=due; p.followupDueDate=due;
+        if(plannedNextJ){
+          var nextType='active';
+          try{ nextType=(p.stageAppointmentBuckets&&p.stageAppointmentBuckets[String(nextStage)])||p.bookingBucket||'active'; }catch(e){}
+          p.status='CONFIRMED';
+          p.nextAppointment=isoFromJ(plannedNextJ);
+          p.bookingBucketDate=plannedNextJ;
+          p.bookingBucket=nextType;
+          p.bookingType=nextType;
+          p.followupMode='';
+          activatedNext=true;
+          p.history.push({date:new Date().toISOString(),type:'فعال‌سازی نوبت بعد',dateJ:plannedNextJ,eventDateJ:plannedNextJ,stage:nextStage,note:'پس از تزریق مرحله '+doneStage+'، نوبت ازپیش‌رزروشده مرحله '+nextStage+' برای '+plannedNextJ+' فعال شد.'});
+        }else{
+          p.followupMode='CALL_DUE';
+          p.nextAppointment=dueIso; p.status='PENDING_CALL'; p.bookingBucket='';p.bookingType='';p.bookingBucketDate='';
+          p.history.push({date:new Date().toISOString(),type:'موعد تماس',dateJ:due,eventDateJ:due,stage:nextStage,note:'موعد تماس مرحله '+nextStage+' برای '+due+' ثبت شد؛ نوبت قطعی هنوز رزرو نشده است.'});
+        }
       }
-      try{logAction('TREATMENT_DONE',{id:p.id,name:p.fullName||'',stage:doneStage,dateJ:doneJ,note:'ثبت تزریق بر اساس تاریخ واقعی پرونده و محاسبه موعد بعدی'});}catch(e){}
+      try{logAction('TREATMENT_DONE',{id:p.id,name:p.fullName||'',stage:doneStage,dateJ:doneJ,note:activatedNext?('ثبت تزریق و فعال‌سازی نوبت بعد: '+plannedNextJ):'ثبت تزریق بر اساس تاریخ واقعی پرونده و محاسبه موعد بعدی'});}catch(e){}
       try{saveData();}catch(e){} try{renderTable();}catch(e){} try{renderDateButtons();}catch(e){}
       try{removeDoctorDayIfFinished(doneJ);}catch(e){} try{invDeductForTreatment(p.fullName||'',doneJ);}catch(e){}
-      if(doneStage<4) showMsg('تزریق ثبت شد','تاریخ آخرین تزریق روی '+toPersianDigits(doneJ)+' ثبت شد و موعد تماس مرحله '+toPersianDigits(doneStage+1)+' برای '+toPersianDigits(p.idealNextDate)+' محاسبه شد.');
-      else showMsg('دوره درمان تکمیل شد','تزریق یادآور در تاریخ '+toPersianDigits(doneJ)+' ثبت و پرونده بایگانی شد.');
+      if(doneStage>=4){
+        showMsg('دوره درمان تکمیل شد','تزریق یادآور در تاریخ '+toPersianDigits(doneJ)+' ثبت و پرونده بایگانی شد.');
+      }else if(activatedNext){
+        showMsg('تزریق ثبت شد','نوبت مرحله '+toPersianDigits(String(doneStage+1))+' برای '+toPersianDigits(plannedNextJ)+' فعال شد و در لیست تأیید همان روز می‌آید.');
+      }else{
+        setTimeout(function(){
+          showConfirm('ثبت نوبت بعد','تزریق ثبت شد. نوبت مرحله '+toPersianDigits(String(doneStage+1))+' هنوز قطعی نشده. الان ثبت می‌کنید؟',function(){
+            try{ if(typeof openApptModalForPatient==='function') openApptModalForPatient(p.id); }catch(e){}
+          },'بله، ثبت نوبت','بعداً در تماس');
+        }, 80);
+      }
     });
   };
 
@@ -29666,6 +29843,70 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
   try{ window.prpRunArchiveRebookingScenarioTests(); }catch(e){
     console.error('archive rebooking scenario tests failed', e);
   }
+})();
+</script>
+
+<script id="prp-v168-confirmed-list-and-next-appt">
+(function(){
+  'use strict';
+  function iso(j){
+    try{ var g=jalaliToGregorian(j); return g ? g.toISOString() : ''; }
+    catch(e){ return ''; }
+  }
+  window.prpRunConfirmedListScenarioTests = function(){
+    var dayA='1405/05/10', dayB='1405/07/12', due='1405/07/10';
+    var confirmedCurrent={
+      id:'c1', status:'CONFIRMED', currentStage:1,
+      bookingBucketDate:dayA, nextAppointment:iso(dayA),
+      stageAppointments:{'1':dayA}
+    };
+    var timezoneDrift={
+      id:'c2', status:'CONFIRMED', currentStage:1,
+      bookingBucketDate:dayA, nextAppointment:iso(dayB),
+      stageAppointments:{'1':dayA}
+    };
+    var futureReserved={
+      id:'c3', status:'CONFIRMED', currentStage:1,
+      bookingBucketDate:dayA, nextAppointment:iso(dayA),
+      stageAppointments:{'1':dayA,'2':dayB}
+    };
+    var callDueOnly={
+      id:'c4', status:'PENDING_CALL', currentStage:2, followupMode:'CALL_DUE',
+      bookingBucketDate:'', bookingBucket:'', nextAppointment:iso(due),
+      stageAppointments:{'1':dayA}
+    };
+    var statusDriftBooked={
+      id:'c5', status:'PENDING_CALL', currentStage:1,
+      bookingBucketDate:dayA, bookingBucket:'active', nextAppointment:iso(dayA),
+      stageAppointments:{'1':dayA}
+    };
+    var afterInjectionActivated={
+      id:'c6', status:'CONFIRMED', currentStage:2,
+      bookingBucketDate:dayB, nextAppointment:iso(dayB),
+      stageAppointments:{'1':dayA,'2':dayB}
+    };
+    var results=[
+      {name:'نوبت قطعی جاری در لیست تأیید همان روز می‌آید', ok:prpPatientBelongsOnConfirmedDate(confirmedCurrent, dayA) && !prpPatientBelongsOnConfirmedDate(confirmedCurrent, dayB)},
+      {name:'اختلاف تاریخ ISO مانع نمایش در روز رزرو نمی‌شود', ok:prpPatientBelongsOnConfirmedDate(timezoneDrift, dayA)},
+      {name:'رزرو مرحله بعد در لیست تأیید همان تاریخ می‌آید', ok:prpPatientBelongsOnConfirmedDate(futureReserved, dayB) && prpPatientBelongsOnConfirmedDate(futureReserved, dayA)},
+      {name:'موعد تماس بدون رزرو در لیست تأیید نمی‌آید', ok:!prpPatientBelongsOnConfirmedDate(callDueOnly, due) && !prpPatientBelongsOnConfirmedDate(callDueOnly, dayA)},
+      {name:'رزرو واقعی با وضعیت ناقص هم در لیست تأیید می‌آید', ok:prpPatientBelongsOnConfirmedDate(statusDriftBooked, dayA)},
+      {name:'بعد از تزریق، نوبت فعال‌شده در تاریخ بعد می‌آید نه تاریخ تزریق', ok:prpPatientBelongsOnConfirmedDate(afterInjectionActivated, dayB) && !prpPatientBelongsOnConfirmedDate(afterInjectionActivated, dayA)},
+      {name:'تاریخ تزریق قبلی ظرفیت روز جاری را اشغال نمی‌کند', ok:prpCollectPatientBookingDateKeys(afterInjectionActivated).indexOf(dayA)===-1 && prpCollectPatientBookingDateKeys(afterInjectionActivated).indexOf(dayB)!==-1}
+    ];
+    window.__PRP_V168_SCENARIO_TESTS={
+      passed:results.filter(function(r){return r.ok;}).length,
+      total:results.length,
+      results:results,
+      at:new Date().toISOString()
+    };
+    return window.__PRP_V168_SCENARIO_TESTS;
+  };
+  function boot(){
+    try{ window.prpRunConfirmedListScenarioTests(); }catch(e){ console.error('confirmed list scenario tests failed', e); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 300); });
+  else setTimeout(boot, 300);
 })();
 </script>
 </body></html>
