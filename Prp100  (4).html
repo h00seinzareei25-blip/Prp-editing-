@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- PRPv168: لیست تأیید همه نوبت‌های قطعی را نشان می‌دهد؛ بعد از تزریق نوبت بعد فعال یا ثبت می‌شود -->
+<!-- PRPv169: نوبت بایگانی در لیست تأیید؛ بعد از تزریق موعد تماس نه تایید فریزشده؛ تاریخ تزریق در تاریخچه -->
 
 <!-- saved from url=(0067)file:///C:/Users/Hosein/Desktop/prp-project/PRPv65_final_v4(1).html -->
 <html lang="fa" dir="rtl"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0"> <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"> <meta http-equiv="Pragma" content="no-cache"> <meta http-equiv="Expires" content="0"> <title>سامانه مدیریت هوشمند PRP v137</title> <!-- Single-file offline CSS (embedded) -->
@@ -29907,6 +29907,595 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 300); });
   else setTimeout(boot, 300);
+})();
+</script>
+<script id="prp-v169-archive-call-history-fix">
+(function(){
+  'use strict';
+  if(window.__PRP_V169_ARCHIVE_CALL_HISTORY__) return;
+  window.__PRP_V169_ARCHIVE_CALL_HISTORY__ = true;
+
+  function key(v){
+    try{
+      if(typeof window.prpSafeJalaliKey === 'function'){
+        var k = window.prpSafeJalaliKey(v);
+        if(k) return k;
+      }
+    }catch(e){}
+    try{
+      var raw = String(v == null ? '' : v).trim().replace(/-/g, '/');
+      if(/^\d{4}\/\d{2}\/\d{2}$/.test(raw)) return raw;
+      if(typeof jalaliStringFromMaybe === 'function'){
+        var j = jalaliStringFromMaybe(v);
+        if(j && j !== '-' && typeof normalizeJalaliDateKey === 'function'){
+          var n = normalizeJalaliDateKey(j);
+          if(n && /^\d{4}\/\d{2}\/\d{2}$/.test(n)) return n;
+        }
+      }
+    }catch(e){}
+    return '';
+  }
+  function isoFromKey(j){
+    var k = key(j);
+    if(!k) return '';
+    try{
+      var g = jalaliToGregorian(k);
+      return g && !isNaN(g.getTime()) ? g.toISOString() : '';
+    }catch(e){ return ''; }
+  }
+  function todayKey(){
+    try{ return key(typeof getTodayJalali === 'function' ? getTodayJalali() : ''); }
+    catch(e){ return ''; }
+  }
+  function extractJalaliDates(txt){
+    var out = [];
+    try{
+      var s = (typeof toEnglishDigits === 'function') ? toEnglishDigits(String(txt || '')) : String(txt || '');
+      var re = /(1[34]\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})/g, m;
+      while((m = re.exec(s))){
+        var mm = String(m[2]).padStart(2, '0');
+        var dd = String(m[3]).padStart(2, '0');
+        var k = key(m[1] + '/' + mm + '/' + dd);
+        if(k) out.push(k);
+      }
+    }catch(e){}
+    return out;
+  }
+  function isInjectionEntry(h){
+    if(!h || h.voidedAt) return false;
+    if(String(h.source || '').indexOf('recovered-stage-plan') === 0 || h.recovered){
+      if(/تزریق|INJECTION|TREATMENT_DONE/i.test(String((h.type || '') + ' ' + (h.note || '')))) return true;
+    }
+    var txt = String((h.type || '') + ' ' + (h.note || '') + ' ' + (h.action || ''));
+    return /تزریق|TREATMENT_DONE|INJECTION/i.test(txt) && !/موعد تماس|فعال‌سازی نوبت|ثبت نوبت/.test(String(h.type || ''));
+  }
+  function stageOfEntry(h){
+    var st = Number(h && h.stage) || 0;
+    if(st >= 1 && st <= 4) return st;
+    try{
+      var m = String((h && (h.type || '')) + ' ' + ((h && h.note) || '')).match(/(?:تزریق|مرحله)\s*([1-4۱-۴])/);
+      if(!m) return 0;
+      var n = m[1];
+      try{ n = (typeof toEnglishDigits === 'function') ? toEnglishDigits(n) : n; }catch(e){}
+      return Number(n) || 0;
+    }catch(e){ return 0; }
+  }
+  function injectionEventDate(h){
+    if(!h) return '';
+    var explicit = [h.eventDateJ, h.dateJ, h.visitDateJ, h.treatmentDateJ, h.confirmedVisitDateJ];
+    var i, d;
+    for(i = 0; i < explicit.length; i++){
+      d = key(explicit[i]);
+      if(d) return d;
+    }
+    var note = String(h.note || '');
+    var tagged = note.match(/تاریخ\s*تزریق\s*[:：]?\s*(1[34]\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
+    if(tagged){
+      d = key(tagged[1]);
+      if(d) return d;
+    }
+    var dates = extractJalaliDates(note);
+    if(dates.length) return dates[0];
+    return key(h.date);
+  }
+  function realInjections(p){
+    var rows = [];
+    (p && Array.isArray(p.history) ? p.history : []).forEach(function(h, idx){
+      if(!isInjectionEntry(h)) return;
+      if(String(h.source || '').indexOf('recovered-stage-plan') === 0) return;
+      var st = stageOfEntry(h), j = injectionEventDate(h);
+      if(st >= 1 && st <= 4 && j) rows.push({stage:st, dateJ:j, entry:h, index:idx});
+    });
+    rows.sort(function(a, b){
+      var c = String(a.dateJ).localeCompare(String(b.dateJ));
+      return c || (a.stage - b.stage) || (a.index - b.index);
+    });
+    return rows;
+  }
+  function latestRealInjection(p){
+    var rows = realInjections(p);
+    return rows.length ? rows[rows.length - 1] : null;
+  }
+  function dueAfterDone(doneJ, doneStage){
+    var st = Number(doneStage) || 1;
+    var months = (st === 3) ? 6 : 2;
+    try{ return key(addJalaliMonths(key(doneJ), months)); }
+    catch(e){ return ''; }
+  }
+  function nearDue(booked, due){
+    booked = key(booked); due = key(due);
+    if(!booked || !due) return false;
+    if(booked === due) return true;
+    try{
+      var gb = jalaliToGregorian(booked), gd = jalaliToGregorian(due);
+      if(!gb || !gd) return false;
+      var diff = (typeof diffDaysUTC === 'function') ? Math.abs(diffDaysUTC(gb, gd)) : Math.abs((gb - gd) / 86400000);
+      return diff <= 6;
+    }catch(e){ return false; }
+  }
+  function hasBookingHistoryForDate(p, dateJ){
+    var k = key(dateJ);
+    if(!p || !k) return false;
+    return (p.history || []).some(function(h){
+      if(!h) return false;
+      var t = String(h.type || '');
+      if(!/ثبت نوبت|تایید|فعال‌سازی مجدد/.test(t)) return false;
+      if(/موعد تماس/.test(t)) return false;
+      var dates = extractJalaliDates(h.note);
+      if(key(h.eventDateJ) === k || key(h.dateJ) === k) return true;
+      return dates.indexOf(k) !== -1;
+    });
+  }
+  function isStuckPostInjectionConfirmed(p){
+    if(!p || String(p.status || '') !== 'CONFIRMED') return false;
+    if(p.followupMode === 'CALL_DUE') return true;
+    var last = latestRealInjection(p);
+    if(!last) return false;
+    var booked = key(p.bookingBucketDate || p.nextAppointment);
+    if(!booked) return false;
+    var cur = Number(p.currentStage || 1) || 1;
+    var planCur = key((p.stageAppointments && p.stageAppointments[String(cur)]) || '');
+    var due = dueAfterDone(last.dateJ, last.stage) || key(p.idealNextDate || p.followupDueDate);
+    if(booked <= last.dateJ) return true;
+    var realCurrent = !!(planCur && planCur > last.dateJ && planCur === booked && hasBookingHistoryForDate(p, booked));
+    if(realCurrent) return false;
+    if(nearDue(booked, due) && planCur !== booked) return true;
+    if(nearDue(booked, due) && (!planCur || planCur === last.dateJ || planCur <= last.dateJ) && !hasBookingHistoryForDate(p, booked)) return true;
+    return false;
+  }
+  function archivedHasFreshBooking(p){
+    if(!p || String(p.status || '') !== 'ARCHIVED') return false;
+    var booked = key(p.bookingBucketDate || p.nextAppointment);
+    if(!booked) return false;
+    if(hasBookingHistoryForDate(p, booked)) return true;
+    var today = todayKey();
+    if(today && booked >= today && (p.bookingBucket || p.bookingType)) return true;
+    return false;
+  }
+  function sanitizeInjectionHistory(p){
+    if(!p || !Array.isArray(p.history)) return 0;
+    var changed = 0;
+    p.history.forEach(function(h){
+      if(!isInjectionEntry(h)) return;
+      var d = injectionEventDate(h);
+      if(!d) return;
+      if(h.eventDateJ !== d){ h.legacyEventDateJ = h.legacyEventDateJ || h.eventDateJ; h.eventDateJ = d; changed++; }
+      if(h.dateJ !== d){ h.legacyDateJ = h.legacyDateJ || h.dateJ; h.dateJ = d; changed++; }
+      var dates = extractJalaliDates(h.note);
+      if(!dates.length || dates[dates.length - 1] !== d){
+        var note = String(h.note || '').replace(/\s*—\s*تاریخ تزریق:\s*1[34]\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2}\s*$/, '');
+        h.note = (note || 'تزریق انجام شد') + ' — تاریخ تزریق: ' + d;
+        changed++;
+      }
+    });
+    return changed;
+  }
+  function stripFakeRecoveredInjections(p){
+    if(!p || !Array.isArray(p.history)) return 0;
+    var cur = Number(p.currentStage || 1) || 1;
+    var booked = key(p.bookingBucketDate || p.nextAppointment);
+    var before = p.history.length;
+    p.history = p.history.filter(function(h){
+      if(!h) return false;
+      var recovered = String(h.source || '').indexOf('recovered-stage-plan') === 0 || !!h.recovered;
+      if(!recovered || !isInjectionEntry(h)) return true;
+      var st = stageOfEntry(h);
+      var d = injectionEventDate(h);
+      if(st >= cur && d && (d === booked || d > (todayKey() || d))) return false;
+      if(st >= cur) return false;
+      return true;
+    });
+    return before - p.history.length;
+  }
+  function syncCompletedStageDates(p){
+    if(!p) return 0;
+    var changed = 0;
+    var plan = (p.stageAppointments && typeof p.stageAppointments === 'object') ? p.stageAppointments : {};
+    p.stageAppointments = plan;
+    var cur = Number(p.currentStage || 1) || 1;
+    var last = latestRealInjection(p);
+    realInjections(p).forEach(function(x){
+      if(x.stage < cur || (last && x.stage === last.stage && x.stage < cur)){
+        if(key(plan[String(x.stage)]) !== x.dateJ){
+          plan[String(x.stage)] = x.dateJ;
+          changed++;
+        }
+      }
+    });
+    if(last){
+      if(key(p.lastInjectionDate) !== last.dateJ){ p.lastInjectionDate = last.dateJ; changed++; }
+      if(Number(p.lastInjectionStage || 0) !== last.stage){ p.lastInjectionStage = last.stage; changed++; }
+    }
+    if(String(p.status || '') === 'CONFIRMED' && !isStuckPostInjectionConfirmed(p)){
+      var booked = key(p.bookingBucketDate || p.nextAppointment);
+      if(booked && key(plan[String(cur)]) !== booked){
+        plan[String(cur)] = booked;
+        changed++;
+      }
+    }
+    return changed;
+  }
+  function revertStuckConfirmed(p){
+    if(!isStuckPostInjectionConfirmed(p)) return false;
+    var last = latestRealInjection(p);
+    var due = last ? (dueAfterDone(last.dateJ, last.stage) || key(p.idealNextDate || p.followupDueDate)) : key(p.idealNextDate || p.followupDueDate);
+    var cur = Number(p.currentStage || 1) || 1;
+    var plan = (p.stageAppointments && typeof p.stageAppointments === 'object') ? p.stageAppointments : {};
+    var booked = key(p.bookingBucketDate || p.nextAppointment);
+    if(key(plan[String(cur)]) === booked) delete plan[String(cur)];
+    p.status = 'PENDING_CALL';
+    p.followupMode = 'CALL_DUE';
+    p.bookingBucket = '';
+    p.bookingType = '';
+    p.bookingBucketDate = '';
+    if(due){
+      p.idealNextDate = due;
+      p.followupDueDate = due;
+      p.nextAppointment = isoFromKey(due) || p.nextAppointment;
+    }
+    return true;
+  }
+  function snapshotLiveBooking(p){
+    if(!p) return null;
+    if(isStuckPostInjectionConfirmed(p)) return null;
+    var booked = key(p.bookingBucketDate || ((p.status === 'CONFIRMED') ? p.nextAppointment : ''));
+    if(!booked) return null;
+    if(String(p.status || '') !== 'CONFIRMED' && !archivedHasFreshBooking(p)) return null;
+    return {
+      id: p.id,
+      status: p.status,
+      nextAppointment: p.nextAppointment,
+      bookingBucket: p.bookingBucket,
+      bookingType: p.bookingType,
+      bookingBucketDate: p.bookingBucketDate || booked,
+      followupMode: p.followupMode,
+      currentStage: p.currentStage,
+      stageAppointments: JSON.parse(JSON.stringify(p.stageAppointments || {}))
+    };
+  }
+  function restoreLiveBooking(p, snap){
+    if(!p || !snap) return false;
+    var booked = key(snap.bookingBucketDate);
+    if(!booked) return false;
+    if(typeof window.prpFinalizeArchivedRebooking === 'function' && (snap.status === 'ARCHIVED' || p.status === 'ARCHIVED' || p.archiveReason || p.archiveAt)){
+      window.prpFinalizeArchivedRebooking(p, booked, snap.bookingBucket || snap.bookingType || '', 'v169-restore', {silent:true});
+      return true;
+    }
+    p.status = 'CONFIRMED';
+    p.nextAppointment = snap.nextAppointment || isoFromKey(booked);
+    p.bookingBucket = snap.bookingBucket || snap.bookingType || p.bookingBucket || 'active';
+    p.bookingType = p.bookingBucket;
+    p.bookingBucketDate = booked;
+    p.followupMode = '';
+    if(snap.stageAppointments) p.stageAppointments = snap.stageAppointments;
+    return true;
+  }
+  function reconcilePatient(p){
+    if(!p) return 0;
+    var n = 0;
+    n += sanitizeInjectionHistory(p);
+    n += stripFakeRecoveredInjections(p);
+    if(archivedHasFreshBooking(p) && typeof window.prpFinalizeArchivedRebooking === 'function'){
+      var booked = key(p.bookingBucketDate || p.nextAppointment);
+      if(window.prpFinalizeArchivedRebooking(p, booked, p.bookingBucket || p.bookingType || '', 'v169-archive-rebooking', {silent:true})) n++;
+    }
+    if(revertStuckConfirmed(p)) n++;
+    n += syncCompletedStageDates(p);
+    return n;
+  }
+  function reconcileAllPatients(){
+    var n = 0;
+    (window.patients || []).forEach(function(p){ n += reconcilePatient(p); });
+    return n;
+  }
+
+  window.prpInjectionEventDateFromHistory = injectionEventDate;
+  window.prpIsStuckPostInjectionConfirmed = isStuckPostInjectionConfirmed;
+  window.prpReconcilePatientState = reconcilePatient;
+  window.prpReconcileAllPatientStates = reconcileAllPatients;
+
+  var origBelong = window.prpPatientBelongsOnConfirmedDate;
+  if(typeof origBelong === 'function' && !origBelong.__prpV169Wrapped){
+    var wrappedBelong = function(p, dateJ){
+      if(!p) return false;
+      if(isStuckPostInjectionConfirmed(p)) return false;
+      if(p.followupMode === 'CALL_DUE' && !key(p.bookingBucketDate)) return false;
+      if(String(p.status || '') === 'ARCHIVED'){
+        var k = key(dateJ);
+        if(k && archivedHasFreshBooking(p) && (key(p.bookingBucketDate) === k || key(p.nextAppointment) === k)) return true;
+        return false;
+      }
+      return origBelong.apply(this, arguments);
+    };
+    wrappedBelong.__prpV169Wrapped = true;
+    window.prpPatientBelongsOnConfirmedDate = wrappedBelong;
+    try{ prpPatientBelongsOnConfirmedDate = wrappedBelong; }catch(e){}
+  }
+
+  var origCollect = window.prpCollectPatientBookingDateKeys;
+  if(typeof origCollect === 'function' && !origCollect.__prpV169Wrapped){
+    var wrappedCollect = function(p){
+      if(p && isStuckPostInjectionConfirmed(p)){
+        var cur = Number(p.currentStage || 1) || 1;
+        var keys = [];
+        var plan = (p.stageAppointments && typeof p.stageAppointments === 'object') ? p.stageAppointments : {};
+        Object.keys(plan).forEach(function(st){
+          if(Number(st) > cur){
+            var k = key(plan[st]);
+            if(k && keys.indexOf(k) === -1) keys.push(k);
+          }
+        });
+        return keys;
+      }
+      return origCollect.apply(this, arguments);
+    };
+    wrappedCollect.__prpV169Wrapped = true;
+    window.prpCollectPatientBookingDateKeys = wrappedCollect;
+    try{ prpCollectPatientBookingDateKeys = wrappedCollect; }catch(e){}
+  }
+
+  function wrapBookingFn(name){
+    var base = window[name] || (typeof self[name] === 'function' ? self[name] : null);
+    if(typeof base !== 'function' || base.__prpV169ArchiveBook) return;
+    var wrapped = function(){
+      var pid = (name === 'apptConfirmBook') ? (window._apptSelectedPatientId || (typeof _apptSelectedPatientId !== 'undefined' ? _apptSelectedPatientId : '')) : (window.tempConfirmId || (typeof tempConfirmId !== 'undefined' ? tempConfirmId : ''));
+      var p = (window.patients || []).find(function(x){ return x && String(x.id) === String(pid); });
+      var wasArchived = !!(p && (p.status === 'ARCHIVED' || p.archiveReason || p.archiveAt));
+      var dateHint = (name === 'apptConfirmBook') ? (window._apptSelectedDate || (typeof _apptSelectedDate !== 'undefined' ? _apptSelectedDate : '')) : '';
+      var ret = base.apply(this, arguments);
+      try{
+        p = (window.patients || []).find(function(x){ return x && String(x.id) === String(pid); }) || p;
+        if(p && (wasArchived || p.archiveReason || p.archiveAt) && p.status === 'CONFIRMED'){
+          var booked = key(p.bookingBucketDate || dateHint || p.nextAppointment);
+          if(booked && typeof window.prpFinalizeArchivedRebooking === 'function'){
+            window.prpFinalizeArchivedRebooking(p, booked, p.bookingBucket || p.bookingType || '', 'v169-' + name, {silent:false});
+          }
+        }
+      }catch(e){}
+      return ret;
+    };
+    wrapped.__prpV169ArchiveBook = true;
+    window[name] = wrapped;
+    try{ self[name] = wrapped; }catch(e){}
+  }
+  wrapBookingFn('apptConfirmBook');
+  wrapBookingFn('applyConfirm');
+
+  var origRepair = window.prpRepairInjectionDateConsistency;
+  if(typeof origRepair === 'function' && !origRepair.__prpV169Wrapped){
+    var wrappedRepair = function(){
+      var snaps = [];
+      (window.patients || []).forEach(function(p){
+        try{ sanitizeInjectionHistory(p); stripFakeRecoveredInjections(p); }catch(e){}
+        var snap = snapshotLiveBooking(p);
+        if(snap) snaps.push(snap);
+      });
+      var result = origRepair.apply(this, arguments) || {fixed:0};
+      var extra = 0;
+      snaps.forEach(function(snap){
+        var p = (window.patients || []).find(function(x){ return x && String(x.id) === String(snap.id); });
+        if(!p) return;
+        if(p.status === 'ARCHIVED' || key(p.bookingBucketDate) !== key(snap.bookingBucketDate)){
+          if(restoreLiveBooking(p, snap)) extra++;
+        }
+      });
+      extra += reconcileAllPatients();
+      if(result) result.fixed = Number(result.fixed || 0) + extra;
+      return result;
+    };
+    wrappedRepair.__prpV169Wrapped = true;
+    window.prpRepairInjectionDateConsistency = wrappedRepair;
+  }
+
+  var origAuditHist = window.prpAuditAndRepairHistories;
+  if(typeof origAuditHist === 'function' && !origAuditHist.__prpV169Wrapped){
+    var wrappedAuditHist = function(){
+      try{ reconcileAllPatients(); }catch(e){}
+      var ret = origAuditHist.apply(this, arguments);
+      try{ reconcileAllPatients(); }catch(e){}
+      return ret;
+    };
+    wrappedAuditHist.__prpV169Wrapped = true;
+    window.prpAuditAndRepairHistories = wrappedAuditHist;
+  }
+
+  var origShowHistory = window.showHistory;
+  if(typeof origShowHistory === 'function' && !origShowHistory.__prpV169Wrapped){
+    var wrappedHistory = function(pid){
+      var p = (window.patients || []).find(function(x){ return x && String(x.id) === String(pid); });
+      var savedPlan = null;
+      if(p){
+        try{
+          sanitizeInjectionHistory(p);
+          stripFakeRecoveredInjections(p);
+          savedPlan = JSON.parse(JSON.stringify(p.stageAppointments || {}));
+          var cur = Number(p.currentStage || 1) || 1;
+          var have = {};
+          realInjections(p).forEach(function(x){ have[x.stage] = true; });
+          Object.keys(p.stageAppointments || {}).forEach(function(st){
+            if(Number(st) >= cur && !have[st]) delete p.stageAppointments[st];
+          });
+        }catch(e){}
+      }
+      try{ return origShowHistory.apply(this, arguments); }
+      finally{
+        try{
+          if(p && savedPlan) p.stageAppointments = savedPlan;
+          if(p){ stripFakeRecoveredInjections(p); sanitizeInjectionHistory(p); }
+        }catch(e){}
+      }
+    };
+    wrappedHistory.__prpV169Wrapped = true;
+    window.showHistory = wrappedHistory;
+    try{ showHistory = wrappedHistory; }catch(e){}
+  }
+
+  var origComplete = window.completeTreatment;
+  if(typeof origComplete === 'function' && !origComplete.__prpV169Wrapped){
+    var wrappedComplete = function(id){
+      var origConfirm = window.showConfirm;
+      var armed = true;
+      function gatedConfirm(title, text, onOk, yes, no){
+        if(armed && /ثبت نوبت بعد/.test(String(title || ''))){
+          try{
+            showMsg('موعد تماس ثبت شد', 'بیمار برای مرحله بعد در لیست تماس است. نوبت قطعی هنگام تماس ثبت می‌شود.');
+          }catch(e){}
+          return;
+        }
+        return origConfirm.apply(this, arguments);
+      }
+      window.showConfirm = gatedConfirm;
+      try{ showConfirm = gatedConfirm; }catch(e){}
+      try{ return origComplete.apply(this, arguments); }
+      finally{
+        setTimeout(function(){
+          armed = false;
+          window.showConfirm = origConfirm;
+          try{ showConfirm = origConfirm; }catch(e){}
+        }, 500);
+      }
+    };
+    wrappedComplete.__prpV169Wrapped = true;
+    window.completeTreatment = wrappedComplete;
+    try{ completeTreatment = wrappedComplete; }catch(e){}
+  }
+
+  var origSave = window.saveData;
+  if(typeof origSave === 'function' && !origSave.__prpV169Wrapped){
+    var wrappedSave = function(){
+      try{ reconcileAllPatients(); }catch(e){ console.error('v169 reconcile failed', e); }
+      return origSave.apply(this, arguments);
+    };
+    wrappedSave.__prpV169Wrapped = true;
+    window.saveData = wrappedSave;
+    try{ saveData = wrappedSave; }catch(e){}
+  }
+
+  var origRenderTable = window.renderTable;
+  if(typeof origRenderTable === 'function' && !origRenderTable.__prpV169Wrapped){
+    var wrappedRender = function(){
+      var list = window.patients || [];
+      list.forEach(function(p){
+        if(!p) return;
+        if(p.status === 'CONFIRMED' && isStuckPostInjectionConfirmed(p)){
+          p.__prpV169WasStuck = p.status;
+          revertStuckConfirmed(p);
+        }
+      });
+      var ret = origRenderTable.apply(this, arguments);
+      try{
+        document.querySelectorAll('tr[data-pid]').forEach(function(tr){
+          var id = tr.getAttribute('data-pid');
+          var p = list.find(function(x){ return x && String(x.id) === String(id); });
+          if(!p || p.status !== 'ARCHIVED') return;
+          if(tr.querySelector('button[onclick*="openApptModalForPatient"]')) return;
+          var host = tr.querySelector('button[onclick*="startNewCycle"]');
+          if(!host || !host.parentNode) return;
+          var b = document.createElement('button');
+          b.className = 'text-gray-400 hover:text-sky-600 p-1.5 transition rounded-lg hover:bg-sky-50';
+          b.title = 'ثبت نوبت';
+          b.setAttribute('aria-label', 'ثبت نوبت');
+          b.textContent = '📅';
+          b.setAttribute('onclick', "openApptModalForPatient('" + String(p.id).replace(/'/g, '') + "')");
+          host.parentNode.insertBefore(b, host.nextSibling);
+        });
+      }catch(e){}
+      return ret;
+    };
+    wrappedRender.__prpV169Wrapped = true;
+    window.renderTable = wrappedRender;
+    try{ renderTable = wrappedRender; }catch(e){}
+  }
+
+  window.prpRunArchiveCallHistoryScenarioTests = function(){
+    function iso(j){ return isoFromKey(j); }
+    var inj = '1405/02/22', due = '1405/04/22', book = '1405/05/10', later = '1405/07/12';
+    var stuck = {
+      id:'stuck', status:'CONFIRMED', currentStage:2, followupMode:'',
+      bookingBucketDate:due, bookingBucket:'injection', nextAppointment:iso(due),
+      idealNextDate:due, followupDueDate:due,
+      stageAppointments:{'1':inj,'2':inj},
+      lastInjectionDate:inj, lastInjectionStage:1,
+      history:[{type:'تزریق 1', stage:1, dateJ:inj, eventDateJ:inj, note:'انجام شد - تاریخ تزریق: '+inj+' موعد بعدی: '+due}]
+    };
+    var realNext = {
+      id:'real', status:'CONFIRMED', currentStage:2,
+      bookingBucketDate:book, bookingBucket:'active', nextAppointment:iso(book),
+      stageAppointments:{'1':inj,'2':book},
+      history:[
+        {type:'تزریق 1', stage:1, dateJ:inj, eventDateJ:inj, note:'انجام شد - تاریخ تزریق: '+inj},
+        {type:'ثبت نوبت', dateJ:book, eventDateJ:book, note:'نوبت از — به '+book+' قطعی شد'}
+      ]
+    };
+    var archived = {
+      id:'arch', status:'ARCHIVED', currentStage:4,
+      archiveReason:'تکمیل مراحل درمان', archiveAt:'2026-07-01T10:00:00.000Z',
+      nextAppointment:iso(book), bookingBucketDate:book, bookingBucket:'active',
+      stageAppointments:{'1':inj,'2':due,'3':book},
+      history:[
+        {type:'تزریق 4', stage:4, dateJ:inj, eventDateJ:inj, note:'انجام شد - تاریخ تزریق: '+inj},
+        {type:'ثبت نوبت', dateJ:book, eventDateJ:book, note:'نوبت از — به '+book+' قطعی شد'}
+      ]
+    };
+    var recoveredFake = {
+      id:'hist', status:'PENDING_CALL', currentStage:2, followupMode:'CALL_DUE',
+      nextAppointment:iso(due), bookingBucketDate:'',
+      stageAppointments:{'1':inj,'2':book},
+      history:[
+        {type:'تزریق 1', stage:1, dateJ:inj, eventDateJ:inj, note:'انجام شد - تاریخ تزریق: '+inj},
+        {type:'تزریق 2', stage:2, dateJ:book, eventDateJ:book, note:'سابقه تزریق از برنامه مراحل پرونده بازیابی شد.', source:'recovered-stage-plan', recovered:true}
+      ]
+    };
+
+    reconcilePatient(stuck);
+    reconcilePatient(realNext);
+    reconcilePatient(archived);
+    reconcilePatient(recoveredFake);
+
+    var injRow = stuck.history.find(function(h){ return isInjectionEntry(h); });
+    var results = [
+      {name:'پرونده گیرکرده بعد از تزریق به لیست تماس برمی‌گردد', ok:stuck.status==='PENDING_CALL' && stuck.followupMode==='CALL_DUE' && !stuck.bookingBucketDate},
+      {name:'موعد محاسبه‌ای در لیست تأیید نمی‌آید', ok:!prpPatientBelongsOnConfirmedDate(stuck, due)},
+      {name:'نوبت واقعی مرحله بعد تایید می‌ماند', ok:realNext.status==='CONFIRMED' && prpPatientBelongsOnConfirmedDate(realNext, book) && !prpPatientBelongsOnConfirmedDate(realNext, inj)},
+      {name:'بایگانی با نوبت تازه در لیست تأیید همان روز می‌آید', ok:archived.status==='CONFIRMED' && prpPatientBelongsOnConfirmedDate(archived, book)},
+      {name:'تاریخ تزریق از موعد بعدی داخل متن جدا می‌شود', ok:injectionEventDate(injRow)===inj},
+      {name:'تزریق بازیابی‌شده از نوبت آینده حذف می‌شود', ok:realInjections(recoveredFake).every(function(x){ return x.stage===1; }) && key((recoveredFake.stageAppointments||{})['2'])===book}
+    ];
+    window.__PRP_V169_SCENARIO_TESTS = {
+      passed: results.filter(function(r){ return r.ok; }).length,
+      total: results.length,
+      results: results,
+      at: new Date().toISOString()
+    };
+    return window.__PRP_V169_SCENARIO_TESTS;
+  };
+
+  function boot(){
+    try{ reconcileAllPatients(); }catch(e){}
+    try{ window.prpRunArchiveCallHistoryScenarioTests(); }catch(e){ console.error('v169 scenario tests failed', e); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 450); });
+  else setTimeout(boot, 450);
 })();
 </script>
 </body></html>
