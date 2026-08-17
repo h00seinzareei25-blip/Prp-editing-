@@ -9393,10 +9393,13 @@ function markAbsent(id) {
             var makeCell = function(item, idx){
                 if(!item || !item.p) return '<td class="cell empty"></td>';
                 var p = item.p;
+                var nameHtml = (typeof window.prpPrintPatientNameHtml === 'function')
+                    ? window.prpPrintPatientNameHtml(p, esc, dateJ)
+                    : '<div class="nm"><span class="nn">' + esc(p.fullName) + '</span></div>';
                 return '<td class="cell"><div class="ri">'
                     + '<div class="cn">' + idx + '</div>'
                     + '<div class="cb">'
-                    + '<div class="nm"><span class="sg">' + esc(printStageSite(p)) + '</span><span class="nn">' + esc(p.fullName) + '</span></div>'
+                    + nameHtml
                     + '<div class="dt">'
                     + '<span class="lb">کد ملی: </span><span class="vl ltr">' + esc(normalizeNationalIdForStorage(p.nationalId||'')) + '</span>'
                     + '<span class="sp"> | </span>'
@@ -9441,9 +9444,9 @@ function markAbsent(id) {
                 + '.ri { display:flex; align-items:center; padding:3px 8px; gap:7px; height:100%; }'
                 + '.cn { min-width:22px; height:22px; background:#374151; color:#fff; border-radius:50%; font-size:' + numPx + 'px; font-weight:bold; display:flex; align-items:center; justify-content:center; flex-shrink:0; }'
                 + '.cb { flex:1; overflow:hidden; }'
-                + '.nm { font-weight:bold; font-size:' + namePx + 'px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:6px; letter-spacing:0.2px; }'
-                + '.sg { flex:0 0 auto; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; }'
-                + '.nn { min-width:0; overflow:hidden; text-overflow:ellipsis; }'
+                + '.nm { font-weight:bold; font-size:' + namePx + 'px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; direction:rtl; text-align:right; letter-spacing:0.2px; }'
+                + '.sg { float:right; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; margin-left:6px; }'
+                + '.nn { display:inline; }'
                 + '.dt { font-size:' + detPx + 'px; color:#222; display:flex; align-items:center; gap:2px; white-space:nowrap; overflow:hidden; line-height:1.6; }'
                 + '.lb { color:#555; font-size:' + (detPx - 0.5) + 'px; }'
                 + '.vl { font-weight:bold; color:#000; }'
@@ -12427,10 +12430,13 @@ tr.innerHTML = `
 
             const makeCell = (p, idx) => {
                 if(!p) return `<td class="cell empty"></td>`;
+                var nameHtml = (typeof window.prpPrintPatientNameHtml === 'function')
+                    ? window.prpPrintPatientNameHtml(p, esc, dateKey)
+                    : `<div class="nm"><span class="nn">${esc(p.fullName)}</span></div>`;
                 return `<td class="cell"><div class="ri">
                   <div class="cn">${idx}</div>
                   <div class="cb">
-                    <div class="nm"><span class="sg">${esc(printStageSite(p))}</span><span class="nn">${esc(p.fullName)}</span></div>
+                    ${nameHtml}
                     <div class="dt">
                       <span class="lb">کد ملی: </span><span class="vl ltr">${esc(p.nationalId)}</span>
                       <span class="sp"> | </span>
@@ -12476,9 +12482,9 @@ tr.innerHTML = `
   .ri { display:flex; align-items:center; padding:3px 8px; gap:7px; height:100%; }
   .cn { min-width:22px; height:22px; background:#374151; color:#fff; border-radius:50%; font-size:${numPx}px; font-weight:bold; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
   .cb { flex:1; overflow:hidden; }
-  .nm { font-weight:bold; font-size:${namePx}px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:6px; letter-spacing:0.2px; }
-  .sg { flex:0 0 auto; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; }
-  .nn { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .nm { font-weight:bold; font-size:${namePx}px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; direction:rtl; text-align:right; letter-spacing:0.2px; }
+  .sg { float:right; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; margin-left:6px; }
+  .nn { display:inline; }
   .dt { font-size:${detPx}px; color:#222; display:flex; align-items:center; gap:2px; white-space:nowrap; overflow:hidden; line-height:1.6; }
   .lb  { color:#555; font-size:${detPx - 0.5}px; }
   .vl  { font-weight:bold; color:#000; }
@@ -31038,6 +31044,142 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 700); });
   else setTimeout(boot, 700);
+})();
+</script>
+<script id="prp-v172-print-stage-site-toggle">
+(function(){
+  'use strict';
+  if(window.__PRP_V172_PRINT_STAGE_SITE__) return;
+  window.__PRP_V172_PRINT_STAGE_SITE__ = true;
+
+  var LS_KEY = 'prpPrintStageSite';
+
+  function key(v){
+    try{
+      if(typeof window.prpSafeJalaliKey === 'function'){
+        var k = window.prpSafeJalaliKey(v);
+        if(k) return k;
+      }
+    }catch(e){}
+    try{
+      var raw = String(v == null ? '' : v).trim().replace(/-/g, '/');
+      if(/^\d{4}\/\d{2}\/\d{2}$/.test(raw)) return raw;
+    }catch(e){}
+    return '';
+  }
+
+  window.prpIsPrintStageSiteEnabled = function(){
+    try{ return localStorage.getItem(LS_KEY) === '1'; }catch(e){ return false; }
+  };
+
+  window.prpSetPrintStageSiteEnabled = function(on){
+    try{ localStorage.setItem(LS_KEY, on ? '1' : '0'); }catch(e){}
+    try{
+      var cb = document.getElementById('prpPrintStageSiteToggle');
+      if(cb) cb.checked = !!on;
+    }catch(e){}
+  };
+
+  window.prpPrintStageSiteLabel = function(p, dateKey){
+    var st = Number((p && p.currentStage) || 1) || 1;
+    var want = key(dateKey);
+    try{
+      if(want && p && p.stageAppointments){
+        Object.keys(p.stageAppointments).forEach(function(k){
+          var sk = key(p.stageAppointments[k]);
+          if(sk && sk === want && Number(k) > st) st = Number(k);
+        });
+      }
+    }catch(e){}
+    var site = String((p && p.site) || '').trim() || '—';
+    var stageTxt = (st === 4)
+      ? 'یادآور'
+      : ('م' + (typeof toPersianDigits === 'function' ? toPersianDigits(String(st)) : String(st)));
+    return stageTxt + ' ' + site;
+  };
+
+  window.prpPrintPatientNameHtml = function(p, esc, dateKey){
+    var safe = typeof esc === 'function' ? esc : function(v){ return String(v == null ? '' : v); };
+    var name = safe(p && p.fullName);
+    if(!window.prpIsPrintStageSiteEnabled()){
+      return '<div class="nm"><span class="nn">' + name + '</span></div>';
+    }
+    var tag = safe(window.prpPrintStageSiteLabel(p, dateKey));
+    return '<div class="nm"><span class="sg">' + tag + '</span><span class="nn">' + name + '</span></div>';
+  };
+
+  function injectToggle(){
+    if(document.getElementById('prpPrintStageSiteWrap')) return;
+    var printBtn = document.getElementById('printBtn');
+    if(!printBtn || !printBtn.parentNode) return;
+    var style = document.createElement('style');
+    style.id = 'prp-v172-print-stage-site-css';
+    style.textContent = [
+      '#prpPrintStageSiteWrap{display:none;align-items:center;gap:6px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:8px 12px;min-height:48px;cursor:pointer;flex:0 0 auto;user-select:none;}',
+      '#prpPrintStageSiteWrap span{font-size:12px;font-weight:800;color:#374151;white-space:nowrap;}',
+      '#prpPrintStageSiteToggle{width:16px;height:16px;accent-color:#2563eb;cursor:pointer;}',
+      'body[data-current-tab="confirmedList"] #prpPrintStageSiteWrap{display:flex !important;}',
+      'body:not([data-current-tab="confirmedList"]) #prpPrintStageSiteWrap{display:none !important;}'
+    ].join('');
+    document.head.appendChild(style);
+
+    var label = document.createElement('label');
+    label.id = 'prpPrintStageSiteWrap';
+    label.title = 'اگر تیک بخورد، مرحله و محل تزریق جلوی اسم در پرینت چاپ می‌شود';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'prpPrintStageSiteToggle';
+    cb.checked = window.prpIsPrintStageSiteEnabled();
+    cb.addEventListener('change', function(){
+      window.prpSetPrintStageSiteEnabled(!!cb.checked);
+    });
+    var txt = document.createElement('span');
+    txt.textContent = 'مرحله و محل تزریق در پرینت';
+    label.appendChild(cb);
+    label.appendChild(txt);
+    printBtn.parentNode.insertBefore(label, printBtn.nextSibling);
+  }
+
+  window.prpRunPrintStageSiteTests = function(){
+    var p = {fullName:'علی تست', currentStage:2, site:'زانو چپ'};
+    var esc = function(v){ return String(v == null ? '' : v); };
+    var prev = null;
+    try{ prev = localStorage.getItem(LS_KEY); }catch(e){}
+    window.prpSetPrintStageSiteEnabled(false);
+    var off = window.prpPrintPatientNameHtml(p, esc, '');
+    window.prpSetPrintStageSiteEnabled(true);
+    var on = window.prpPrintPatientNameHtml(p, esc, '');
+    var label = window.prpPrintStageSiteLabel(p, '');
+    try{
+      if(prev === null) localStorage.removeItem(LS_KEY);
+      else localStorage.setItem(LS_KEY, prev);
+    }catch(e){}
+    try{
+      var cb = document.getElementById('prpPrintStageSiteToggle');
+      if(cb) cb.checked = window.prpIsPrintStageSiteEnabled();
+    }catch(e){}
+    var sgAt = on.indexOf('class="sg"');
+    var nnAt = on.indexOf('class="nn"');
+    var results = [
+      {name:'بدون تیک فقط اسم چاپ می‌شود', ok: off.indexOf('class="sg"') < 0 && off.indexOf('علی تست') >= 0},
+      {name:'با تیک مرحله جلوی اسم در HTML است', ok: sgAt >= 0 && nnAt > sgAt && on.indexOf('علی تست') >= 0},
+      {name:'برچسب مرحله و ناحیه درست است', ok: /م[2۲]/.test(label) && label.indexOf('زانو چپ') >= 0}
+    ];
+    window.__PRP_V172_SCENARIO_TESTS = {
+      passed: results.filter(function(r){ return r.ok; }).length,
+      total: results.length,
+      results: results,
+      at: new Date().toISOString()
+    };
+    return window.__PRP_V172_SCENARIO_TESTS;
+  };
+
+  function boot(){
+    try{ injectToggle(); }catch(e){}
+    try{ window.prpRunPrintStageSiteTests(); }catch(e){ console.error('print stage-site tests failed', e); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
 </script>
 </body></html>
