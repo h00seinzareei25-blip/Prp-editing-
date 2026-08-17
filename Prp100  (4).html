@@ -9378,11 +9378,17 @@ function markAbsent(id) {
             if(rowH > 28) rowH = 28;
             if(rowH < 7) rowH = 7;
 
-            var namePx = rowH >= 18 ? 15 : rowH >= 15 ? 14 : rowH >= 12 ? 13 : rowH >= 10 ? 11 : 9;
+            var namePx = rowH >= 18 ? 16 : rowH >= 15 ? 15 : rowH >= 12 ? 14 : rowH >= 10 ? 12 : 10;
             var detPx  = rowH >= 18 ? 12 : rowH >= 15 ? 11 : rowH >= 12 ? 10 : rowH >= 10 ? 9  : 7.5;
             var numPx  = 10;
             var title = 'لیست تزریق‌ها - ' + dateJ;
             var meta  = 'تعداد: ' + n + ' نفر &nbsp;|&nbsp; تزریق: ' + report.inj.length + ' &nbsp;|&nbsp; غیبت: ' + report.abs.length + ' &nbsp;|&nbsp; تاریخ پرینت: ' + printDate;
+            function printStageSite(p){
+                var st = Number((p && p.currentStage) || 1) || 1;
+                var site = String((p && p.site) || '').trim() || '—';
+                var stageTxt = (st === 4) ? 'یادآور' : ('م' + (typeof toPersianDigits === 'function' ? toPersianDigits(String(st)) : String(st)));
+                return stageTxt + ' ' + site;
+            }
 
             var makeCell = function(item, idx){
                 if(!item || !item.p) return '<td class="cell empty"></td>';
@@ -9390,7 +9396,7 @@ function markAbsent(id) {
                 return '<td class="cell"><div class="ri">'
                     + '<div class="cn">' + idx + '</div>'
                     + '<div class="cb">'
-                    + '<div class="nm">' + esc(p.fullName) + '</div>'
+                    + '<div class="nm"><span class="sg">' + esc(printStageSite(p)) + '</span><span class="nn">' + esc(p.fullName) + '</span></div>'
                     + '<div class="dt">'
                     + '<span class="lb">کد ملی: </span><span class="vl ltr">' + esc(normalizeNationalIdForStorage(p.nationalId||'')) + '</span>'
                     + '<span class="sp"> | </span>'
@@ -9435,7 +9441,9 @@ function markAbsent(id) {
                 + '.ri { display:flex; align-items:center; padding:3px 8px; gap:7px; height:100%; }'
                 + '.cn { min-width:22px; height:22px; background:#374151; color:#fff; border-radius:50%; font-size:' + numPx + 'px; font-weight:bold; display:flex; align-items:center; justify-content:center; flex-shrink:0; }'
                 + '.cb { flex:1; overflow:hidden; }'
-                + '.nm { font-weight:bold; font-size:' + namePx + 'px; color:#000; line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.2px; }'
+                + '.nm { font-weight:bold; font-size:' + namePx + 'px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:6px; letter-spacing:0.2px; }'
+                + '.sg { flex:0 0 auto; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; }'
+                + '.nn { min-width:0; overflow:hidden; text-overflow:ellipsis; }'
                 + '.dt { font-size:' + detPx + 'px; color:#222; display:flex; align-items:center; gap:2px; white-space:nowrap; overflow:hidden; line-height:1.6; }'
                 + '.lb { color:#555; font-size:' + (detPx - 0.5) + 'px; }'
                 + '.vl { font-weight:bold; color:#000; }'
@@ -12397,17 +12405,32 @@ tr.innerHTML = `
             const rowH = Math.floor(267 / rowsNeeded);  // mm - خودکار فیت می‌شه
             const totalPages = 1;
 
-            // فونت متناسب با ارتفاع ردیف
-            const namePx = rowH >= 18 ? 15 : rowH >= 15 ? 14 : rowH >= 12 ? 13 : rowH >= 10 ? 11 : 9;
+            // فونت متناسب با ارتفاع ردیف — مرحله/ناحیه جلوی اسم و درشت، برای خواندن با چشم ضعیف
+            const namePx = rowH >= 18 ? 16 : rowH >= 15 ? 15 : rowH >= 12 ? 14 : rowH >= 10 ? 12 : 10;
             const detPx  = rowH >= 18 ? 12 : rowH >= 15 ? 11 : rowH >= 12 ? 10 : rowH >= 10 ? 9  : 7.5;
             const numPx  = 10;
+            const dateKey = currentFilterDate ? (typeof prpSafeJalaliKey === 'function' ? prpSafeJalaliKey(currentFilterDate) : currentFilterDate) : '';
+            function printStageSite(p){
+                var st = Number((p && p.currentStage) || 1) || 1;
+                try{
+                    if(dateKey && p && p.stageAppointments){
+                        Object.keys(p.stageAppointments).forEach(function(k){
+                            var sk = (typeof prpSafeJalaliKey === 'function') ? prpSafeJalaliKey(p.stageAppointments[k]) : String(p.stageAppointments[k]||'');
+                            if(sk && sk === dateKey && Number(k) > st) st = Number(k);
+                        });
+                    }
+                }catch(e){}
+                var site = String((p && p.site) || '').trim() || '—';
+                var stageTxt = (st === 4) ? 'یادآور' : ('م' + (typeof toPersianDigits === 'function' ? toPersianDigits(String(st)) : String(st)));
+                return stageTxt + ' ' + site;
+            }
 
             const makeCell = (p, idx) => {
                 if(!p) return `<td class="cell empty"></td>`;
                 return `<td class="cell"><div class="ri">
                   <div class="cn">${idx}</div>
                   <div class="cb">
-                    <div class="nm">${esc(p.fullName)}</div>
+                    <div class="nm"><span class="sg">${esc(printStageSite(p))}</span><span class="nn">${esc(p.fullName)}</span></div>
                     <div class="dt">
                       <span class="lb">کد ملی: </span><span class="vl ltr">${esc(p.nationalId)}</span>
                       <span class="sp"> | </span>
@@ -12453,7 +12476,9 @@ tr.innerHTML = `
   .ri { display:flex; align-items:center; padding:3px 8px; gap:7px; height:100%; }
   .cn { min-width:22px; height:22px; background:#374151; color:#fff; border-radius:50%; font-size:${numPx}px; font-weight:bold; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
   .cb { flex:1; overflow:hidden; }
-  .nm { font-weight:bold; font-size:${namePx}px; color:#000; line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.2px; }
+  .nm { font-weight:bold; font-size:${namePx}px; color:#000; line-height:1.45; white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:6px; letter-spacing:0.2px; }
+  .sg { flex:0 0 auto; font-weight:900; color:#000; background:#fff; border:1.6px solid #111; border-radius:5px; padding:1px 7px; }
+  .nn { min-width:0; overflow:hidden; text-overflow:ellipsis; }
   .dt { font-size:${detPx}px; color:#222; display:flex; align-items:center; gap:2px; white-space:nowrap; overflow:hidden; line-height:1.6; }
   .lb  { color:#555; font-size:${detPx - 0.5}px; }
   .vl  { font-weight:bold; color:#000; }
