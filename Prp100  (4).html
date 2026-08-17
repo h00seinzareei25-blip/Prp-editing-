@@ -30498,4 +30498,279 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
   else setTimeout(boot, 450);
 })();
 </script>
+<script id="prp-v170-site-change-cycle">
+(function(){
+  'use strict';
+  if(window.__PRP_V170_SITE_CHANGE_CYCLE__) return;
+  window.__PRP_V170_SITE_CHANGE_CYCLE__ = true;
+
+  function normSite(v){ return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+  function nowIso(){ return new Date().toISOString(); }
+  function todayJ(){
+    try{ return (typeof getTodayJalali === 'function') ? getTodayJalali() : ''; }
+    catch(e){ return ''; }
+  }
+  function bookedKey(p){
+    try{
+      if(typeof prpSafeJalaliKey === 'function'){
+        return prpSafeJalaliKey(p && (p.bookingBucketDate || p.nextAppointment)) || '';
+      }
+    }catch(e){}
+    return String((p && p.bookingBucketDate) || '').trim();
+  }
+  function hasCompletedInjection(p){
+    if(!p) return false;
+    if(Number(p.lastInjectionStage || 0) >= 1) return true;
+    if(p.lastInjectionDate) return true;
+    return (p.history || []).some(function(h){
+      if(!h || h.voidedAt) return false;
+      if(String(h.source || '').indexOf('recovered-stage-plan') === 0) return false;
+      return /تزریق/.test(String(h.type || ''));
+    });
+  }
+  function needsSiteChangeChoice(p, oldSite, newSite){
+    oldSite = normSite(oldSite); newSite = normSite(newSite);
+    if(!p || !oldSite || !newSite || oldSite === newSite) return false;
+    if(String(p.status || '') === 'ARCHIVED') return false;
+    return hasCompletedInjection(p) || Number(p.currentStage || 1) > 1;
+  }
+  function isoFromJ(j){
+    try{
+      var g = jalaliToGregorian(j);
+      return g && !isNaN(g.getTime()) ? g.toISOString() : '';
+    }catch(e){ return ''; }
+  }
+
+  window.prpNeedsSiteChangeChoice = needsSiteChangeChoice;
+  window.prpHasCompletedInjection = hasCompletedInjection;
+
+  function ensureModal(){
+    if(document.getElementById('prpSiteChangeModal')) return;
+    var css = document.createElement('style');
+    css.textContent =
+      '#prpSiteChangeModal{position:fixed;inset:0;z-index:360;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:14px;backdrop-filter:blur(4px)}' +
+      '#prpSiteChangeModal.show{display:flex}' +
+      '#prpSiteChangeModal .box{width:100%;max-width:420px;background:#fff;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,.25);overflow:hidden}' +
+      '#prpSiteChangeModal .head{padding:13px 15px;background:#0f766e;color:#fff;font-size:13px;font-weight:950}' +
+      '#prpSiteChangeModal .body{padding:14px;font-size:12px;font-weight:750;color:#334155;line-height:1.9}' +
+      '#prpSiteChangeModal .hint{margin-top:8px;padding:8px 10px;border-radius:12px;background:#f0fdfa;border:1px solid #99f6e4;font-size:11px;color:#0f766e}' +
+      '#prpSiteChangeModal .foot{padding:10px 14px;border-top:1px solid #eef2f7;display:flex;flex-direction:column;gap:7px}' +
+      '#prpSiteChangeModal button{border-radius:12px;padding:10px 12px;font-size:11px;font-weight:900;cursor:pointer;width:100%}' +
+      '#prpSiteChangeModal .btn-new{border:0;background:#0f766e;color:#fff}' +
+      '#prpSiteChangeModal .btn-label{border:1px solid #99f6e4;background:#ecfdf5;color:#0f766e}' +
+      '#prpSiteChangeModal .btn-cancel{border:1px solid #e2e8f0;background:#fff;color:#64748b}';
+    document.head.appendChild(css);
+    var m = document.createElement('div');
+    m.id = 'prpSiteChangeModal';
+    m.innerHTML =
+      '<div class="box">' +
+        '<div class="head">تغییر ناحیه درمان</div>' +
+        '<div class="body"><div id="prpSiteChangeText"></div><div class="hint" id="prpSiteChangeHint"></div></div>' +
+        '<div class="foot">' +
+          '<button type="button" class="btn-label" id="prpSiteChangeLabelBtn">فقط برچسب اشتباه بود — همین پرونده و همین مرحله بماند</button>' +
+          '<button type="button" class="btn-new" id="prpSiteChangeNewBtn">ناحیه واقعاً عوض شده — سیکل جدید از مرحله ۱</button>' +
+          '<button type="button" class="btn-cancel" id="prpSiteChangeCancelBtn">انصراف</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(ev){ if(ev.target === m) hideModal(); });
+  }
+  function hideModal(){
+    var m = document.getElementById('prpSiteChangeModal');
+    if(m) m.classList.remove('show');
+  }
+  function showModal(oldSite, newSite, stage, onLabel, onNew){
+    ensureModal();
+    var st = String(stage || 1);
+    try{ if(typeof toPersianDigits === 'function') st = toPersianDigits(st); }catch(e){}
+    document.getElementById('prpSiteChangeText').textContent =
+      'این پرونده الان مرحله ' + st + ' «' + oldSite + '» است و ناحیه به «' + newSite + '» تغییر کرده.';
+    document.getElementById('prpSiteChangeHint').textContent =
+      'اگر تزریق‌های قبلی مال همین محل بوده و فقط اسم اشتباه ثبت شده، برچسب را اصلاح کنید. اگر محل درمان عوض شده، سیکل جدید از مرحله ۱ باز می‌شود و پرونده فعلی روی «' + oldSite + '» می‌ماند.';
+    document.getElementById('prpSiteChangeLabelBtn').onclick = function(){ hideModal(); onLabel(); };
+    document.getElementById('prpSiteChangeNewBtn').onclick = function(){ hideModal(); onNew(); };
+    document.getElementById('prpSiteChangeCancelBtn').onclick = hideModal;
+    document.getElementById('prpSiteChangeModal').classList.add('show');
+  }
+
+  function addHistory(p, type, note){
+    if(!p) return;
+    var now = nowIso();
+    (p.history = p.history || []).push({
+      date: now, recordedAt: now, dateJ: todayJ(), eventDateJ: todayJ(),
+      type: type, note: note, stage: Number(p.currentStage || 0),
+      source: 'site-change', category: type.indexOf('سیکل') >= 0 ? 'status' : 'edit'
+    });
+  }
+
+  function createNewSiteCase(from, newSite){
+    var now = nowIso();
+    var cycleNo = 1;
+    try{
+      if(typeof getNextCycleNoForPerson === 'function'){
+        cycleNo = getNextCycleNoForPerson(from.nationalId, from.phone);
+      }
+    }catch(e){ cycleNo = 1; }
+    var booked = bookedKey(from);
+    var transfer = String(from.status || '') === 'CONFIRMED' && !!booked;
+    var np = {
+      id: Date.now().toString(),
+      treatmentCaseId: (typeof genId === 'function') ? genId('case') : ('case_' + Date.now()),
+      fullName: from.fullName,
+      nationalId: from.nationalId,
+      nationalIdStatus: from.nationalIdStatus,
+      phone: from.phone,
+      site: newSite,
+      desc: 'سیکل جدید به‌خاطر تغییر ناحیه از «' + (from.site || '') + '» به «' + newSite + '»',
+      hasInsurance: !!from.hasInsurance,
+      isFree: !!from.isFree,
+      hasDoctorLetter: !!from.hasDoctorLetter,
+      isEmergency: !!from.isEmergency,
+      isVip: !!from.isVip,
+      isWaitlist: false,
+      currentStage: 1,
+      lastInjectionDate: '',
+      lastInjectionStage: 0,
+      cycleNo: cycleNo,
+      cycleKey: from.cycleKey || from.nationalId || from.phone || '',
+      duplicateOfId: from.id,
+      stageAppointments: {},
+      history: [{
+        date: now, recordedAt: now, dateJ: todayJ(), eventDateJ: todayJ(),
+        type: 'شروع سیکل جدید', stage: 1,
+        note: 'ناحیه از «' + (from.site || '') + '» جدا شد و این پرونده از مرحله ۱ برای «' + newSite + '» شروع شد.',
+        source: 'site-change-new-cycle', category: 'status'
+      }],
+      status: 'PENDING_CALL',
+      followupMode: 'CALL_DUE',
+      nextAppointment: null,
+      idealNextDate: '',
+      followupDueDate: '',
+      bookingBucket: '',
+      bookingType: '',
+      bookingBucketDate: '',
+      lastCallDate: null,
+      absentCount: 0,
+      lastAbsentDate: null
+    };
+    if(transfer){
+      var iso = isoFromJ(booked) || from.nextAppointment;
+      np.status = 'CONFIRMED';
+      np.followupMode = '';
+      np.nextAppointment = iso;
+      np.bookingBucket = from.bookingBucket || from.bookingType || 'new';
+      np.bookingType = np.bookingBucket;
+      np.bookingBucketDate = booked;
+      np.stageAppointments = {'1': booked};
+      np.history.push({
+        date: now, recordedAt: now, dateJ: booked, eventDateJ: booked,
+        type: 'ثبت نوبت', stage: 1,
+        note: 'نوبت ' + booked + ' از پرونده «' + (from.site || '') + '» به این سیکل منتقل شد',
+        source: 'site-change-transfer', category: 'appointment'
+      });
+      from.status = 'PENDING_CALL';
+      from.followupMode = 'CALL_DUE';
+      from.bookingBucket = '';
+      from.bookingType = '';
+      from.bookingBucketDate = '';
+      var due = from.idealNextDate || from.followupDueDate || '';
+      from.nextAppointment = due ? (isoFromJ(due) || null) : null;
+      var st = String(Number(from.currentStage || 1));
+      if(from.stageAppointments && from.stageAppointments[st] === booked) delete from.stageAppointments[st];
+    }
+    addHistory(from, 'شروع سیکل جدید',
+      'ناحیه «' + newSite + '» به‌صورت پرونده جدا از مرحله ۱ باز شد. این پرونده روی «' + (from.site || '') + '» مرحله ' + (from.currentStage || '') + ' ماند.');
+    (window.patients || []).push(np);
+    return np;
+  }
+  window.prpCreateNewSiteCaseFromPatient = createNewSiteCase;
+
+  var pendingEvent = null;
+  var origSave = window.saveEditPatient || (typeof saveEditPatient === 'function' ? saveEditPatient : null);
+  if(typeof origSave === 'function' && !origSave.__prpV170SiteChange){
+    var wrapped = function(e){
+      if(window.__prpV170SkipSiteGuard){
+        window.__prpV170SkipSiteGuard = false;
+        return origSave.apply(this, arguments);
+      }
+      try{
+        if(e && e.preventDefault) e.preventDefault();
+        var id = (document.getElementById('editId') || {}).value || '';
+        var p = (window.patients || []).find(function(x){ return x && String(x.id) === String(id); });
+        var newSite = normSite((document.getElementById('editSite') || {}).value || '');
+        var oldSite = normSite(p && p.site);
+        if(!p || !needsSiteChangeChoice(p, oldSite, newSite)){
+          var ret = origSave.apply(this, arguments);
+          if(p && oldSite && newSite && oldSite !== newSite){
+            addHistory(p, 'اصلاح ناحیه', 'ناحیه از «' + oldSite + '» به «' + newSite + '» اصلاح شد؛ هنوز تزریقی روی ناحیه قبلی ثبت نشده بود.');
+            try{ saveData(); }catch(err){}
+          }
+          return ret;
+        }
+        pendingEvent = e;
+        showModal(oldSite, newSite, p.currentStage, function(){
+          window.__prpV170SkipSiteGuard = true;
+          var r = origSave.call(window, pendingEvent || e);
+          p = (window.patients || []).find(function(x){ return x && String(x.id) === String(id); }) || p;
+          addHistory(p, 'اصلاح ناحیه', 'برچسب ناحیه از «' + oldSite + '» به «' + newSite + '» اصلاح شد. مرحله ' + (p.currentStage || '') + ' حفظ شد.');
+          try{ saveData(); renderTable(); }catch(err){}
+          return r;
+        }, function(){
+          var siteEl = document.getElementById('editSite');
+          if(siteEl) siteEl.value = oldSite;
+          window.__prpV170SkipSiteGuard = true;
+          origSave.call(window, pendingEvent || e);
+          p = (window.patients || []).find(function(x){ return x && String(x.id) === String(id); }) || p;
+          if(p) p.site = oldSite;
+          var created = createNewSiteCase(p, newSite);
+          try{ saveData(); renderTable(); renderDateButtons(); }catch(err){}
+          try{
+            logAction('ADD_PATIENT', { id: created.id, name: created.fullName || '', note: 'سیکل جدید به‌خاطر تغییر ناحیه', dateJ: todayJ() });
+          }catch(err){}
+          showMsg('سیکل جدید ثبت شد',
+            'پرونده «' + oldSite + '» در مرحله ' + (p.currentStage || '') + ' ماند و برای «' + newSite + '» پرونده جدید از مرحله ۱ باز شد.' +
+            (created.status === 'CONFIRMED' ? ' نوبت قطعی امروز به پرونده جدید منتقل شد.' : ''));
+        });
+      }catch(err){
+        console.error('site change guard failed', err);
+        return origSave.apply(this, arguments);
+      }
+    };
+    wrapped.__prpV170SiteChange = true;
+    window.saveEditPatient = wrapped;
+    try{ saveEditPatient = wrapped; }catch(e){}
+  }
+
+  window.prpRunSiteChangeScenarioTests = function(){
+    var p1 = {id:'s1', status:'CONFIRMED', currentStage:2, site:'زانو چپ', lastInjectionStage:1, history:[{type:'تزریق 1', stage:1}]};
+    var p2 = {id:'s2', status:'PENDING_CALL', currentStage:1, site:'زانو راست', lastInjectionStage:0, history:[]};
+    var p3 = {id:'s3', status:'CONFIRMED', currentStage:2, site:'زانو چپ', lastInjectionStage:1, bookingBucketDate:'1405/05/10', bookingBucket:'active', nextAppointment:'1405/05/10', stageAppointments:{'2':'1405/05/10'}, history:[{type:'تزریق 1'}], fullName:'آزمایش', nationalId:'001', phone:'09120000000'};
+    var created = createNewSiteCase(p3, 'زانو راست');
+    var results = [
+      {name:'مرحله ۲ با تزریق قبلی نیاز به انتخاب دارد', ok:needsSiteChangeChoice(p1, 'زانو چپ', 'زانو راست')},
+      {name:'مرحله ۱ بدون تزریق پیغام دوراهی نمی‌خواهد', ok:!needsSiteChangeChoice(p2, 'زانو راست', 'زانو چپ')},
+      {name:'ناحیه یکسان پیغام نمی‌دهد', ok:!needsSiteChangeChoice(p1, 'زانو چپ', 'زانو چپ')},
+      {name:'سیکل جدید از مرحله ۱ ساخته می‌شود', ok:created && created.currentStage===1 && created.site==='زانو راست'},
+      {name:'پرونده قبلی ناحیه و مرحله را حفظ می‌کند', ok:p3.site==='زانو چپ' && Number(p3.currentStage)===2},
+      {name:'نوبت قطعی به پرونده جدید منتقل می‌شود', ok:created.status==='CONFIRMED' && created.bookingBucketDate==='1405/05/10' && p3.status==='PENDING_CALL'}
+    ];
+    window.__PRP_V170_SCENARIO_TESTS = {
+      passed: results.filter(function(r){ return r.ok; }).length,
+      total: results.length,
+      results: results,
+      at: new Date().toISOString()
+    };
+    var idx = (window.patients || []).indexOf(created);
+    if(idx >= 0) window.patients.splice(idx, 1);
+    return window.__PRP_V170_SCENARIO_TESTS;
+  };
+
+  function boot(){
+    ensureModal();
+    try{ window.prpRunSiteChangeScenarioTests(); }catch(e){ console.error('site change scenario tests failed', e); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot, 500); });
+  else setTimeout(boot, 500);
+})();
+</script>
 </body></html>
