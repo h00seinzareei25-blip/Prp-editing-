@@ -180,12 +180,12 @@ body[data-current-tab="confirmedList"] #mainSearchRow > .flex.items-center.gap-3
 body[data-current-tab="confirmedList"] #mainSearchRow > .flex.items-center.gap-3.w-full > .relative.flex-1{flex:1 1 360px !important;min-width:300px !important;}
 body[data-current-tab="confirmedList"] #mainSearchRow > .flex.items-center.gap-3.w-full > .flex.gap-2{flex:0 1 auto !important;min-width:0 !important;max-width:100% !important;flex-wrap:wrap !important;justify-content:flex-end !important;align-items:center !important;}
 body[data-current-tab="confirmedList"] #sortControls,body[data-current-tab="confirmedList"] #stageCounts{display:none !important;}
-body[data-current-tab="confirmedList"] #excelBtn,body[data-current-tab="confirmedList"] #printBtn,body[data-current-tab="confirmedList"] #blankFormBtn,body[data-current-tab="confirmedList"] #smsDateBtn,body[data-current-tab="confirmedList"] #bulkConfirmBtn{flex:0 0 auto;min-height:48px;}
+body[data-current-tab="confirmedList"] #excelBtn,body[data-current-tab="confirmedList"] #printBtn,body[data-current-tab="confirmedList"] #prpPrintStageSiteWrap,body[data-current-tab="confirmedList"] #blankFormBtn,body[data-current-tab="confirmedList"] #smsDateBtn,body[data-current-tab="confirmedList"] #bulkConfirmBtn{flex:0 0 auto;min-height:48px;}
 #confirmedDateFilter{min-width:0;overflow:hidden;}
 #confirmedDateFilter > .flex{min-width:0 !important;max-width:100% !important;overflow:hidden !important;}
 #dateButtonsContainer{min-width:0 !important;flex:1 1 auto !important;overflow-x:auto !important;overflow-y:hidden !important;}
 #dateButtonsContainer button{flex:0 0 auto !important;}
-@media (max-width:900px){#mainSearchRow{padding:12px !important;}#mainSearchRow > .flex.items-center.gap-3.w-full{gap:10px !important;flex-wrap:wrap !important;}#mainSearchRow > .flex.items-center.gap-3.w-full > .relative.flex-1{flex-basis:100% !important;min-width:0 !important;}#mainSearchRow > .flex.items-center.gap-3.w-full > .flex.gap-2{width:100% !important;justify-content:flex-start !important;flex-wrap:wrap !important;}#mainSearchRow #excelBtn,#mainSearchRow #printBtn,#mainSearchRow #blankFormBtn,#mainSearchRow #smsDateBtn,#mainSearchRow #bulkConfirmBtn{padding-left:12px !important;padding-right:12px !important;min-height:44px !important;}body[data-current-tab="allList"] .op-col > div{flex-wrap:wrap !important;}}
+@media (max-width:900px){#mainSearchRow{padding:12px !important;}#mainSearchRow > .flex.items-center.gap-3.w-full{gap:10px !important;flex-wrap:wrap !important;}#mainSearchRow > .flex.items-center.gap-3.w-full > .relative.flex-1{flex-basis:100% !important;min-width:0 !important;}#mainSearchRow > .flex.items-center.gap-3.w-full > .flex.gap-2{width:100% !important;justify-content:flex-start !important;flex-wrap:wrap !important;}#mainSearchRow #excelBtn,#mainSearchRow #printBtn,#mainSearchRow #prpPrintStageSiteWrap,#mainSearchRow #blankFormBtn,#mainSearchRow #smsDateBtn,#mainSearchRow #bulkConfirmBtn{padding-left:12px !important;padding-right:12px !important;min-height:44px !important;}body[data-current-tab="allList"] .op-col > div{flex-wrap:wrap !important;}}
 /* === Fix v79: All/Archive tab toolbar must not overflow === */
 body[data-current-tab="allList"] #mainSearchRow > .flex.items-center.gap-3.w-full{flex-wrap:wrap !important;align-items:center !important;gap:12px !important;}
 body[data-current-tab="allList"] #mainSearchRow > .flex.items-center.gap-3.w-full > .relative.flex-1{flex:1 1 360px !important;min-width:300px !important;}
@@ -272,6 +272,7 @@ body[data-current-tab="allList"] #excelBtn{
 }
 body[data-current-tab="allList"] #stageCounts,
 body[data-current-tab="allList"] #printBtn,
+body[data-current-tab="allList"] #prpPrintStageSiteWrap,
 body[data-current-tab="allList"] #blankFormBtn,
 body[data-current-tab="allList"] #smsDateBtn,
 body[data-current-tab="allList"] #bulkConfirmBtn{
@@ -31077,6 +31078,8 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
     try{
       var cb = document.getElementById('prpPrintStageSiteToggle');
       if(cb) cb.checked = !!on;
+      var wrap = document.getElementById('prpPrintStageSiteWrap');
+      if(wrap) wrap.classList.toggle('is-on', !!on);
     }catch(e){}
   };
 
@@ -31115,9 +31118,10 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
     var style = document.createElement('style');
     style.id = 'prp-v172-print-stage-site-css';
     style.textContent = [
-      '#prpPrintStageSiteWrap{display:none;align-items:center;gap:6px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:8px 12px;min-height:48px;cursor:pointer;flex:0 0 auto;user-select:none;}',
-      '#prpPrintStageSiteWrap span{font-size:12px;font-weight:800;color:#374151;white-space:nowrap;}',
-      '#prpPrintStageSiteToggle{width:16px;height:16px;accent-color:#2563eb;cursor:pointer;}',
+      '#prpPrintStageSiteWrap{display:none;align-items:center;justify-content:center;width:48px;min-width:48px;height:48px;padding:0;margin:0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;cursor:pointer;flex:0 0 48px;user-select:none;box-sizing:border-box;}',
+      '#prpPrintStageSiteWrap:hover{background:#f3f4f6;}',
+      '#prpPrintStageSiteWrap.is-on{background:#eff6ff;border-color:#93c5fd;}',
+      '#prpPrintStageSiteToggle{width:18px;height:18px;margin:0;accent-color:#2563eb;cursor:pointer;}',
       'body[data-current-tab="confirmedList"] #prpPrintStageSiteWrap{display:flex !important;}',
       'body:not([data-current-tab="confirmedList"]) #prpPrintStageSiteWrap{display:none !important;}'
     ].join('');
@@ -31125,18 +31129,21 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
 
     var label = document.createElement('label');
     label.id = 'prpPrintStageSiteWrap';
-    label.title = 'اگر تیک بخورد، مرحله و محل تزریق جلوی اسم در پرینت چاپ می‌شود';
+    label.title = 'نمایش مرحله و محل تزریق جلوی اسم در پرینت';
     var cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.id = 'prpPrintStageSiteToggle';
+    cb.setAttribute('aria-label', 'نمایش مرحله و محل تزریق در پرینت');
+    function syncWrap(){
+      label.classList.toggle('is-on', !!cb.checked);
+    }
     cb.checked = window.prpIsPrintStageSiteEnabled();
+    syncWrap();
     cb.addEventListener('change', function(){
       window.prpSetPrintStageSiteEnabled(!!cb.checked);
+      syncWrap();
     });
-    var txt = document.createElement('span');
-    txt.textContent = 'مرحله و محل تزریق در پرینت';
     label.appendChild(cb);
-    label.appendChild(txt);
     printBtn.parentNode.insertBefore(label, printBtn.nextSibling);
   }
 
@@ -31157,13 +31164,17 @@ window.__PRP_V139_CONFIRMED_VISIT_IMMUTABLE__ = true;
     try{
       var cb = document.getElementById('prpPrintStageSiteToggle');
       if(cb) cb.checked = window.prpIsPrintStageSiteEnabled();
+      var wrapEl = document.getElementById('prpPrintStageSiteWrap');
+      if(wrapEl) wrapEl.classList.toggle('is-on', window.prpIsPrintStageSiteEnabled());
     }catch(e){}
     var sgAt = on.indexOf('class="sg"');
     var nnAt = on.indexOf('class="nn"');
+    var wrapEl = document.getElementById('prpPrintStageSiteWrap');
     var results = [
       {name:'بدون تیک فقط اسم چاپ می‌شود', ok: off.indexOf('class="sg"') < 0 && off.indexOf('علی تست') >= 0},
       {name:'با تیک مرحله جلوی اسم در HTML است', ok: sgAt >= 0 && nnAt > sgAt && on.indexOf('علی تست') >= 0},
-      {name:'برچسب مرحله و ناحیه درست است', ok: /م[2۲]/.test(label) && label.indexOf('زانو چپ') >= 0}
+      {name:'برچسب مرحله و ناحیه درست است', ok: /م[2۲]/.test(label) && label.indexOf('زانو چپ') >= 0},
+      {name:'روی دکمه نوشته دیده نمی‌شود', ok: !wrapEl || (wrapEl.textContent || '').trim() === ''}
     ];
     window.__PRP_V172_SCENARIO_TESTS = {
       passed: results.filter(function(r){ return r.ok; }).length,
